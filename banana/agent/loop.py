@@ -16,6 +16,7 @@ class Agent:
     def __init__(
         self, provider: LLMProvider, tools: ToolRegistry,
         session_mgr: SessionManager, skills_loader: SkillsLoader,
+        memory_store=None, hook_manager=None,
         max_rounds: int = 50, max_tool_chars: int = 80000,
         context_window_tokens: int = 128_000,
     ):
@@ -23,6 +24,8 @@ class Agent:
         self.tools = tools
         self.session_mgr = session_mgr
         self.skills_loader = skills_loader
+        self.memory_store = memory_store
+        self.hook_manager = hook_manager
         self.max_rounds = max_rounds
         self.max_tool_chars = max_tool_chars
         self.context_window_tokens = context_window_tokens
@@ -48,6 +51,7 @@ class Agent:
             provider=self.provider, tools=self.tools,
             subagent_manager=subagent_mgr,
             system_prompt_override=system_prompt,
+            hook_manager=self.hook_manager,
             max_rounds=self.max_rounds,
             max_tool_result_chars=self.max_tool_chars,
             context_window_tokens=self.context_window_tokens,
@@ -71,10 +75,14 @@ class Agent:
         skills_summary = self.skills_loader.build_skills_summary()
         always_skills = self.skills_loader.get_always_skills()
         always_content = self.skills_loader.load_skills_for_context(always_skills) if always_skills else ""
+        memory_context = self.memory_store.get_context() if self.memory_store else ""
 
         prompt = "You are BananaCoder, a personal AI coding assistant. You help with software engineering tasks.\n\n"
         prompt += "## Working Directory\n"
         prompt += f"Current: {Path.cwd()}\n\n"
+
+        if memory_context:
+            prompt += memory_context + "\n\n"
 
         if skills_summary:
             prompt += "## Available Skills\n\n"

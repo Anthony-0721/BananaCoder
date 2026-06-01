@@ -54,6 +54,9 @@ def build_tools(config: Config, skills_loader: SkillsLoader) -> ToolRegistry:
     skill_tool = LoadSkillTool()
     skill_tool.set_loader(skills_loader)
     registry.register(skill_tool)
+    from banana.tools.memory_tool import MemoryTool
+    memory_tool = MemoryTool()
+    registry.register(memory_tool)
     return registry
 
 
@@ -119,7 +122,17 @@ async def _run_interactive(config: Config, args):
         registry,
     )
 
+    # Initialize memory store
+    from banana.memory.store import MemoryStore
+    memory_store = MemoryStore(data_dir)
+
+    # Wire memory tool
+    mem_tool = registry.get("memory")
+    if mem_tool:
+        mem_tool.set_store(memory_store)
+
     agent = Agent(provider, registry, session_mgr, skills_loader,
+                  memory_store=memory_store,
                   max_rounds=config.agent.max_tool_rounds,
                   max_tool_chars=config.agent.max_tool_result_chars)
 

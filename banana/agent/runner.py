@@ -7,6 +7,7 @@ from typing import Any, Awaitable, Callable
 
 from banana.providers.base import LLMProvider, LLMResponse
 from banana.agent.context import ContextManager
+from banana.hook import HookContext
 from banana.tools.registry import ToolRegistry
 
 
@@ -22,6 +23,7 @@ class AgentRunner:
         self, provider: LLMProvider, tools: ToolRegistry,
         subagent_manager=None,
         system_prompt_override: str | None = None,
+        hook_manager=None,
         max_rounds: int = 50,
         max_tool_result_chars: int = 80000,
         context_window_tokens: int = 128_000,
@@ -30,6 +32,7 @@ class AgentRunner:
         self.tools = tools
         self.subagent_manager = subagent_manager
         self.system_prompt_override = system_prompt_override
+        self.hook_manager = hook_manager
         self.max_rounds = max_rounds
         self.max_tool_result_chars = max_tool_result_chars
         self.context = ContextManager(max_tokens=context_window_tokens)
@@ -48,6 +51,11 @@ class AgentRunner:
         for _ in range(self.max_rounds):
             await self.context.compress(messages, self.provider)
             full = [{"role": "system", "content": system_msg}] + messages
+
+            # Before LLM hook
+            if self.hook_manager:
+                hctx = HookContext(messages=full, iteration=_)
+                await self.hook_manager.before_llm_call(hctx)
 
             response = await self.provider.chat_stream_with_retry(
                 messages=full,
@@ -91,6 +99,17 @@ class AgentRunner:
         return RunResult("(reached maximum tool-call rounds)", total_prompt, total_completion)
 
     async def _execute_tools(self, tool_calls, on_tool=None) -> list[str]:
+        # Before-tool hooks
+        if self.hook_manager:
+            for tc in tool_calls:
+                hctx = HookContext(tool_name=tc.name, tool_args=tc.arguments)
+                if not await self.hook_manager.before_tool_execute(hctx):
+                    # Hook blocked this tool call
+                    for i, t in enumerate(tool_calls):
+                        if t.id == tc.id:
+                            # We'll replace with blocked message later
+                            pass
+
         parallel_calls = []
         serial_calls = []
         for tc in tool_calls:

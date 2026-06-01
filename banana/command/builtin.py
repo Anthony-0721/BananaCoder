@@ -251,6 +251,67 @@ def register_builtin_commands(router: CommandRouter, dependencies: dict[str, Any
 
     router.priority("/stop", cmd_stop, title="Stop", description="Interrupt current generation")
 
+    # ---- /memory ----
+    async def cmd_memory(args: str, ctx: dict) -> str | None:
+        from rich.console import Console
+        from banana.memory.store import MemoryStore
+        from pathlib import Path
+        c = Console()
+        store = MemoryStore(Path.home() / ".bananacoder")
+        sections = store.get_sections()
+        if not sections or all(v == [] for k, v in sections.items() if k != "_header"):
+            c.print("\n[yellow]Memory is empty.[/yellow]")
+            c.print("Use [bold]/remember <fact>[/] to add, or let the AI use the [bold]memory[/] tool.\n")
+        else:
+            c.print("\n[bold]Memory:[/bold]\n")
+            for sec, facts in sections.items():
+                if sec == "_header":
+                    continue
+                c.print(f"[bold]{sec}:[/]")
+                for f in facts:
+                    c.print(f"  - {f}")
+            c.print()
+        return None
+
+    router.exact("/memory", cmd_memory,
+                 title="Memory", description="Show persistent memory")
+
+    # ---- /remember ----
+    async def cmd_remember(args: str, ctx: dict) -> str | None:
+        from rich.console import Console
+        from banana.memory.store import MemoryStore
+        from pathlib import Path
+        c = Console()
+        if not args.strip():
+            c.print("[yellow]Usage: /remember <fact>[/yellow]")
+            return None
+        store = MemoryStore(Path.home() / ".bananacoder")
+        store.add("General", args.strip())
+        c.print(f"[green]Remembered: {args.strip()}[/green]")
+        return None
+
+    router.exact("/remember", cmd_remember,
+                 title="Remember", description="Add a fact to memory", arg_hint="<fact>")
+    router.prefix("/remember ", cmd_remember)
+
+    # ---- /forget ----
+    async def cmd_forget(args: str, ctx: dict) -> str | None:
+        from rich.console import Console
+        from banana.memory.store import MemoryStore
+        from pathlib import Path
+        c = Console()
+        if not args.strip():
+            c.print("[yellow]Usage: /forget <query>[/yellow]")
+            return None
+        store = MemoryStore(Path.home() / ".bananacoder")
+        removed = store.remove(None, args.strip())
+        c.print(f"[green]Removed {removed} fact(s) matching '{args.strip()}'[/green]")
+        return None
+
+    router.exact("/forget", cmd_forget,
+                 title="Forget", description="Remove facts from memory", arg_hint="<query>")
+    router.prefix("/forget ", cmd_forget)
+
     # ---- /export ----
     async def cmd_export(args: str, ctx: dict) -> str | None:
         if not session_mgr:
