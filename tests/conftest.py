@@ -4,6 +4,16 @@ import tempfile
 import os
 
 
+@pytest.fixture(autouse=True)
+def _unrestrict_workspace():
+    """Disable workspace restriction for all tests."""
+    from banana.tools import filesystem as fs
+    old = fs._workspace_root
+    fs._workspace_root = None
+    yield
+    fs._workspace_root = old
+
+
 @pytest.fixture
 def temp_dir():
     with tempfile.TemporaryDirectory() as d:

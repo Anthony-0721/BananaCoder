@@ -7,10 +7,20 @@ from typing import Any
 import aiofiles
 
 from banana.tools.base import Tool, tool_parameters
+from banana.tools.path_utils import resolve_workspace_path
 
 
-def _resolve_path(file_path: str) -> Path:
-    return Path(file_path).expanduser().resolve()
+def _resolve_path(file_path: str, allowed_dir: Path | None = None) -> Path:
+    return resolve_workspace_path(file_path, workspace=Path.cwd(), allowed_dir=allowed_dir)
+
+
+# Global workspace restriction (set by build_tools from config)
+_workspace_root: Path | None = None
+
+
+def set_workspace_root(path: Path | None):
+    global _workspace_root
+    _workspace_root = path
 
 
 @tool_parameters({
@@ -26,7 +36,11 @@ class ReadFileTool(Tool):
     read_only = True
 
     async def execute(self, file_path: str) -> str:
-        path = _resolve_path(file_path)
+        allowed = _workspace_root if _workspace_root else None
+        try:
+            path = _resolve_path(file_path, allowed_dir=allowed)
+        except PermissionError as e:
+            return f"read:\n[BLOCKED] {e}"
         if not path.exists():
             return f"read:\n[FAILED] File not found: {file_path}"
         if not path.is_file():
@@ -61,7 +75,11 @@ class WriteFileTool(Tool):
     exclusive = True
 
     async def execute(self, file_path: str, content: str) -> str:
-        path = _resolve_path(file_path)
+        allowed = _workspace_root if _workspace_root else None
+        try:
+            path = _resolve_path(file_path, allowed_dir=allowed)
+        except PermissionError as e:
+            return f"write:\n[BLOCKED] {e}"
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
             async with aiofiles.open(path, "w", encoding="utf-8") as f:
@@ -86,7 +104,11 @@ class EditTool(Tool):
     exclusive = True
 
     async def execute(self, file_path: str, old_string: str, new_string: str) -> str:
-        path = _resolve_path(file_path)
+        allowed = _workspace_root if _workspace_root else None
+        try:
+            path = _resolve_path(file_path, allowed_dir=allowed)
+        except PermissionError as e:
+            return f"edit:\n[BLOCKED] {e}"
         if not path.exists():
             return f"edit:\n[FAILED] File not found: {file_path}"
         if not path.is_file():

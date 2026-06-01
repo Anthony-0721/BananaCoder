@@ -32,19 +32,20 @@ from banana.cli.display import Display, console
 
 def build_tools(config: Config, skills_loader: SkillsLoader) -> ToolRegistry:
     registry = ToolRegistry()
+
+    if config.security.restrict_to_workspace:
+        from banana.tools import filesystem as fs_tools
+        fs_tools.set_workspace_root(Path.cwd())
+
     registry.register(BashTool())
     registry.register(ReadFileTool())
     registry.register(WriteFileTool())
     registry.register(EditTool())
     registry.register(GlobTool())
     registry.register(GrepTool())
-    from loguru import logger
     search_tool = WebSearchTool()
     if config.tools.tavily_api_key:
         search_tool.set_api_key(config.tools.tavily_api_key)
-        logger.debug(f"Tavily API key configured (length={len(config.tools.tavily_api_key)})")
-    else:
-        logger.debug("Tavily API key NOT configured")
     registry.register(search_tool)
     registry.register(WebFetchTool())
     registry.register(AgentTool())
@@ -97,6 +98,18 @@ async def _run_interactive(config: Config, args):
     registry = build_tools(config, skills_loader)
     provider = make_provider(config)
 
+    # Load security config
+    from banana.security import SecurityContext, SecurityMode, get_security
+    sec = get_security()
+    if config.security.mode in ("fast", "yolo", "normal"):
+        sec.mode = SecurityMode(config.security.mode)
+    if config.security.auto_approve:
+        sec.auto_approve = config.security.auto_approve
+    if config.security.write_patterns:
+        sec.write_patterns = config.security.write_patterns
+    if config.security.blocked:
+        sec.blocked = config.security.blocked
+
     data_dir = Path.home() / ".bananacoder"
     data_dir.mkdir(parents=True, exist_ok=True)
     session_mgr = SessionManager(data_dir, Path.cwd())
@@ -110,10 +123,34 @@ async def _run_interactive(config: Config, args):
                   max_rounds=config.agent.max_tool_rounds,
                   max_tool_chars=config.agent.max_tool_result_chars)
 
+    # Set up command router (inspired by nanobot's CommandRouter)
+    from banana.command.router import CommandRouter
+    from banana.command.builtin import register_builtin_commands
+    command_router = CommandRouter()
+    register_builtin_commands(command_router, {
+        "session_mgr": session_mgr,
+        "config": config,
+        "skills_loader": skills_loader,
+        "registry": registry,
+        "agent_loop": None,
+    })
+
     default_preset = config.model_presets.get("default")
     model_name = default_preset.model if default_preset else "unknown"
     session = await session_mgr.load()
-    display.print_welcome(model_name, session.id)
+
+    # Clean startup summary
+    mcp_count = len([n for n in registry.tool_names if n.startswith("mcp_")])
+    builtin_count = len(registry) - mcp_count
+    skill_count = len(skills_loader.list_skills(filter_unavailable=False))
+    mcp_server_count = len(config.mcp_servers)
+    tavily_status = "ok" if config.tools.tavily_api_key else "not set"
+    ws_status = "restricted" if config.security.restrict_to_workspace else "open"
+    summary = (f"Tools: {builtin_count} built-in + {mcp_count} MCP | "
+               f"Skills: {skill_count} | MCP: {mcp_server_count} | "
+               f"Tavily: {tavily_status} | Workspace: {ws_status}")
+
+    display.print_welcome(model_name, session.id, summary)
 
     bindings = KeyBindings()
 
@@ -141,8 +178,10 @@ async def _run_interactive(config: Config, args):
                 continue
             if line.lower() in ("exit", "quit"):
                 break
-            if line.startswith("/"):
-                result = await _handle_slash(line, session_mgr, config, skills_loader, registry)
+
+            # Check if it's a command
+            if line.startswith("/") and command_router.is_command(line):
+                result = await command_router.dispatch(line, {})
                 if result == "EXIT":
                     break
                 continue
@@ -165,108 +204,12 @@ async def _run_interactive(config: Config, args):
     display.print_goodbye()
 
 
-async def _handle_slash(cmd: str, session_mgr, config, skills_loader=None, registry=None):
-    parts = cmd.split()
-    op = parts[0].lower()
-
-    if op in ("/exit", "/quit"):
-        return "EXIT"
-    elif op == "/help":
-        console.print("""
-[bold]Commands:[/bold]
-  /session list|new|switch|delete  — Session management
-  /model [name]                     — View or switch model
-  /tool                             — List available tools (including MCP)
-  /skill                            — List available skills
-  /config                           — Show config
-  /yolo on|off                      — Auto-approve mode
-  /clear                            — Clear current session
-  /status                           — Show current status
-  /exit, /quit                      — Exit
-""")
-    elif op == "/tool":
-        if registry is None:
-            console.print("[yellow]Tool registry not available.[/yellow]")
-        else:
-            names = sorted(registry.tool_names)
-            builtins = [n for n in names if not n.startswith("mcp_")]
-            mcp_tools = [n for n in names if n.startswith("mcp_")]
-            console.print(f"\n[bold]Tools ({len(names)} total)[/bold]\n")
-            if builtins:
-                console.print("[bold]Built-in:[/bold]")
-                for n in builtins:
-                    tool = registry.get(n)
-                    desc = tool.description[:60] if tool else ""
-                    console.print(f"  {n} — {desc}")
-            if mcp_tools:
-                console.print(f"\n[bold]MCP ({len(mcp_tools)}):[/bold]")
-                for n in mcp_tools:
-                    tool = registry.get(n)
-                    desc = tool.description[:60] if tool else ""
-                    console.print(f"  {n} — {desc}")
-            console.print()
-    elif op == "/skill":
-        if skills_loader is None:
-            console.print("[yellow]Skills loader not available.[/yellow]")
-        else:
-            skills = skills_loader.list_skills(filter_unavailable=False)
-            if not skills:
-                console.print("\n[yellow]No skills found.[/yellow]")
-                console.print("Place skills in .banana/skills/<name>/SKILL.md or ~/.bananacoder/skills/<name>/SKILL.md\n")
-            else:
-                console.print(f"\n[bold]Skills ({len(skills)}):[/bold]\n")
-                for s in skills:
-                    available = skills_loader._check_requirements(skills_loader._get_skill_meta(s["name"]))
-                    status = "" if available else " [dim](unavailable)[/dim]"
-                    console.print(f"  {s['name']} — {s['source']}{status}")
-                console.print()
-    elif op == "/session":
-        sub = parts[1] if len(parts) > 1 else "list"
-        if sub == "list":
-            sessions = await session_mgr.list_sessions()
-            for s in sessions:
-                marker = "-> " if s.get("id") == session_mgr._active_id else "  "
-                console.print(f"{marker}{s.get('id', '?')} ({s.get('message_count', 0)} msgs)")
-        elif sub == "new" and len(parts) > 2:
-            s = await session_mgr.new(parts[2])
-            console.print(f"Created and switched to session: {s.id}")
-        elif sub == "switch" and len(parts) > 2:
-            s = await session_mgr.switch(parts[2])
-            console.print(f"Switched to session: {s.id}")
-        elif sub == "delete" and len(parts) > 2:
-            await session_mgr.delete(parts[2])
-            console.print(f"Deleted session: {parts[2]}")
-    elif op == "/status":
-        session = await session_mgr.load()
-        default = config.model_presets.get("default")
-        console.print(f"Session: {session.id}  Messages: {len(session.messages)}  Model: {default.model if default else 'N/A'}")
-    elif op == "/config":
-        console.print(f"Config file: ~/.bananacoder/config.json")
-        console.print(f"Providers: {', '.join(config.providers.keys()) or 'none'}")
-        default = config.model_presets.get("default")
-        if default:
-            console.print(f"Default model: {default.model} (provider: {default.provider})")
-        console.print(f"Fallback models: {', '.join(config.fallback_models) or 'none'}")
-        console.print(f"MCP servers: {', '.join(config.mcp_servers.keys()) or 'none'}")
-    elif op == "/model":
-        if len(parts) > 1:
-            console.print(f"[yellow]Model switching not yet implemented. Edit ~/.bananacoder/config.json to change model.[/yellow]")
-        else:
-            default = config.model_presets.get("default")
-            console.print(f"Current model: {default.model if default else 'N/A'}")
-            console.print(f"Available presets: {', '.join(config.model_presets.keys()) or 'default only'}")
-    elif op == "/yolo":
-        console.print("[yellow]YOLO mode not yet implemented.[/yellow]")
-    elif op == "/clear":
-        session = await session_mgr.load()
-        session.messages.clear()
-        await session_mgr.save(session)
-        console.print("Session cleared.")
-    else:
-        console.print(f"Unknown command: {op}. Type /help for commands.")
-
-
 def main():
+    # Suppress DEBUG logs from MCP SDK and internal modules
+    from loguru import logger
+    logger.remove()
+    logger.add(lambda _: None, level="WARNING")  # Only show WARNING and above by default
+
     parser = argparse.ArgumentParser(description="BananaCoder - AI coding assistant")
     parser.add_argument("prompt", nargs="?", help="Single-shot prompt (omit for interactive mode)")
     parser.add_argument("--session", "-s", help="Session name")

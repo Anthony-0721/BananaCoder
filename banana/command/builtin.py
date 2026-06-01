@@ -1,0 +1,250 @@
+"""Built-in slash command handlers (inspired by nanobot's builtin.py)."""
+from __future__ import annotations
+
+from typing import Any
+
+from banana.command.router import CommandRouter
+
+
+def register_builtin_commands(router: CommandRouter, dependencies: dict[str, Any]):
+    """Register all built-in commands. Dependencies dict provides:
+    - session_mgr: SessionManager
+    - config: Config
+    - skills_loader: SkillsLoader | None
+    - registry: ToolRegistry | None
+    - agent_loop: Any | None (for /stop)
+    """
+
+    session_mgr = dependencies.get("session_mgr")
+    config = dependencies.get("config")
+    skills_loader = dependencies.get("skills_loader")
+    registry = dependencies.get("registry")
+
+    # ---- /help ----
+    async def cmd_help(args: str, ctx: dict) -> str | None:
+        from rich.console import Console
+        Console().print(router.build_help_text())
+        return None
+
+    router.exact("/help", cmd_help,
+                 title="Help", description="Show all available commands", icon="?")
+
+    # ---- /exit, /quit ----
+    async def cmd_exit(args: str, ctx: dict) -> str | None:
+        return "EXIT"
+
+    router.exact("/exit", cmd_exit,
+                 title="Exit", description="Exit BananaCoder")
+    router.exact("/quit", cmd_exit, hide_from_help=True)
+
+    # ---- /new (clear session) ----
+    async def cmd_new(args: str, ctx: dict) -> str | None:
+        if not session_mgr:
+            return None
+        session = await session_mgr.load()
+        session.messages.clear()
+        await session_mgr.save(session)
+        from rich.console import Console
+        Console().print("[green]Session cleared. Starting fresh.[/green]")
+        return None
+
+    router.exact("/new", cmd_new,
+                 title="New chat", description="Clear the session and start fresh")
+    router.exact("/clear", cmd_new, hide_from_help=True)
+
+    # ---- /session ----
+    async def cmd_session(args: str, ctx: dict) -> str | None:
+        if not session_mgr:
+            return None
+        from rich.console import Console
+        c = Console()
+        parts = args.split()
+        sub = parts[0] if parts else "list"
+
+        if sub == "list":
+            sessions = await session_mgr.list_sessions()
+            for s in sessions:
+                marker = "-> " if s.get("id") == session_mgr._active_id else "  "
+                c.print(f"{marker}{s.get('id', '?')} ({s.get('message_count', 0)} msgs)")
+        elif sub == "new" and len(parts) > 1:
+            s = await session_mgr.new(parts[1])
+            c.print(f"[green]Created session: {s.id}[/green]")
+        elif sub == "switch" and len(parts) > 1:
+            s = await session_mgr.switch(parts[1])
+            c.print(f"[green]Switched to: {s.id}[/green]")
+        elif sub == "delete" and len(parts) > 1:
+            await session_mgr.delete(parts[1])
+            c.print(f"[green]Deleted: {parts[1]}[/green]")
+        else:
+            cmd_session_help()
+        return None
+
+    def cmd_session_help():
+        from rich.console import Console
+        Console().print("/session list|new <name>|switch <name>|delete <name>")
+
+    router.exact("/session", cmd_session,
+                 title="Session", description="Manage sessions", icon="S", arg_hint="list|new|switch|delete")
+    router.prefix("/session ", cmd_session)
+
+    # ---- /status ----
+    async def cmd_status(args: str, ctx: dict) -> str | None:
+        if not session_mgr:
+            return None
+        from pathlib import Path
+        from rich.console import Console
+        from rich.table import Table
+        from banana.security import get_security
+        c = Console()
+        session = await session_mgr.load()
+        sec = get_security()
+        default = config.model_presets.get("default") if config else None
+
+        # Count tools
+        tool_count = len(registry) if registry else 0
+        mcp_count = len([n for n in registry.tool_names if n.startswith("mcp_")]) if registry else 0
+        builtin_count = tool_count - mcp_count
+
+        # Count skills
+        skill_count = len(skills_loader.list_skills(filter_unavailable=False)) if skills_loader else 0
+
+        table = Table(title="Status", show_header=False, title_style="bold")
+        table.add_column("Key", style="dim")
+        table.add_column("Value")
+        table.add_row("Session", f"{session.id} ({len(session.messages)} messages)")
+        table.add_row("Working dir", str(Path.cwd()))
+        table.add_row("Model", f"{default.model if default else 'N/A'} ({default.provider if default else 'N/A'})")
+        table.add_row("Security mode", sec.mode.value)
+        table.add_row("Tools", f"{tool_count} total ({builtin_count} built-in, {mcp_count} MCP)")
+        table.add_row("Skills", str(skill_count))
+        mcp_server_count = len(config.mcp_servers) if config else 0
+        table.add_row("MCP servers", f"{mcp_server_count} configured")
+        table.add_row("Sub-agents", "0 active (runs inline)")
+        c.print(table)
+        return None
+
+    router.exact("/status", cmd_status,
+                 title="Status", description="Show current session, model, and security status", icon="i")
+
+    # ---- /config ----
+    async def cmd_config(args: str, ctx: dict) -> str | None:
+        if not config:
+            return None
+        from rich.console import Console
+        c = Console()
+        c.print(f"Config file: ~/.bananacoder/config.json")
+        c.print(f"Providers: {', '.join(config.providers.keys()) or 'none'}")
+        default = config.model_presets.get("default")
+        if default:
+            c.print(f"Default model: {default.model} (provider: {default.provider})")
+        c.print(f"Fallback: {', '.join(config.fallback_models) or 'none'}")
+        c.print(f"MCP servers: {', '.join(config.mcp_servers.keys()) or 'none'}")
+        c.print(f"Tavily key: {'configured' if config.tools.tavily_api_key else 'not set'}")
+        return None
+
+    router.exact("/config", cmd_config,
+                 title="Config", description="Show current configuration", icon="*")
+
+    # ---- /model ----
+    async def cmd_model(args: str, ctx: dict) -> str | None:
+        if not config:
+            return None
+        from rich.console import Console
+        c = Console()
+        if args:
+            c.print(f"[yellow]Model switching at runtime not yet supported.[/yellow]")
+            c.print(f"Edit ~/.bananacoder/config.json and restart to change model.")
+        else:
+            default = config.model_presets.get("default")
+            c.print(f"Current: {default.model if default else 'N/A'}")
+            c.print(f"Presets: {', '.join(config.model_presets.keys())}")
+        return None
+
+    router.exact("/model", cmd_model,
+                 title="Model", description="View or switch model", icon="M", arg_hint="[name]")
+    router.prefix("/model ", cmd_model)
+
+    # ---- /mode (security mode) ----
+    async def cmd_mode(args: str, ctx: dict) -> str | None:
+        from banana.security import SecurityMode, set_mode
+        if args in ("normal", "fast", "yolo"):
+            set_mode(SecurityMode(args))
+        else:
+            from rich.console import Console
+            c = Console()
+            c.print("Usage: /mode normal|fast|yolo")
+            sec = get_security()
+            c.print(f"Current: {sec.mode.value}")
+        return None
+
+    router.exact("/mode", cmd_mode,
+                 title="Security mode", description="Set security mode: normal|fast|yolo", icon="!", arg_hint="normal|fast|yolo")
+    router.prefix("/mode ", cmd_mode)
+
+    # Keep old-style aliases
+    async def cmd_normal(args, ctx): return await cmd_mode("normal", ctx)
+    async def cmd_fast(args, ctx): return await cmd_mode("fast", ctx)
+    async def cmd_yolo(args, ctx): return await cmd_mode("yolo", ctx)
+
+    router.exact("/normal", cmd_normal, hide_from_help=True)
+    router.exact("/fast", cmd_fast, hide_from_help=True)
+    router.exact("/yolo", cmd_yolo, hide_from_help=True)
+
+    # ---- /tool ----
+    async def cmd_tool(args: str, ctx: dict) -> str | None:
+        if not registry:
+            return None
+        from rich.console import Console
+        c = Console()
+        names = sorted(registry.tool_names)
+        builtins = [n for n in names if not n.startswith("mcp_")]
+        mcp_tools = [n for n in names if n.startswith("mcp_")]
+        c.print(f"\n[bold]Tools ({len(names)} total)[/bold]\n")
+        if builtins:
+            c.print("[bold]Built-in:[/bold]")
+            for n in builtins:
+                tool = registry.get(n)
+                desc = tool.description[:60] if tool else ""
+                c.print(f"  {n} — {desc}")
+        if mcp_tools:
+            c.print(f"\n[bold]MCP ({len(mcp_tools)}):[/bold]")
+            for n in mcp_tools:
+                tool = registry.get(n)
+                desc = tool.description[:60] if tool else ""
+                c.print(f"  {n} — {desc}")
+        c.print()
+        return None
+
+    router.exact("/tool", cmd_tool,
+                 title="Tools", description="List available tools (built-in + MCP)", icon="T")
+
+    # ---- /skill ----
+    async def cmd_skill(args: str, ctx: dict) -> str | None:
+        if not skills_loader:
+            return None
+        from rich.console import Console
+        c = Console()
+        skills = skills_loader.list_skills(filter_unavailable=False)
+        if not skills:
+            c.print("\n[yellow]No skills found.[/yellow]")
+            c.print("Place skills in .banana/skills/<name>/SKILL.md or ~/.bananacoder/skills/<name>/SKILL.md\n")
+        else:
+            c.print(f"\n[bold]Skills ({len(skills)}):[/bold]\n")
+            for s in skills:
+                available = skills_loader._check_requirements(skills_loader._get_skill_meta(s["name"]))
+                status = "" if available else " [dim](unavailable)[/dim]"
+                c.print(f"  {s['name']} — {s['source']}{status}")
+            c.print()
+        return None
+
+    router.exact("/skill", cmd_skill,
+                 title="Skills", description="List available skills", icon="S")
+
+    # ---- /stop (priority command) ----
+    async def cmd_stop(args: str, ctx: dict) -> str | None:
+        from rich.console import Console
+        Console().print("[yellow]Stop requested. Use Ctrl+C to interrupt current generation.[/yellow]")
+        return None
+
+    router.priority("/stop", cmd_stop,
+                    title="Stop", description="Interrupt current generation", icon="!")

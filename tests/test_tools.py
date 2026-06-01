@@ -7,6 +7,11 @@ from banana.tools.agent_tool import AgentTool
 
 
 class TestBashTool:
+    @pytest.fixture(autouse=True)
+    def _yolo_mode(self):
+        from banana.security import get_security, SecurityMode
+        get_security().mode = SecurityMode.YOLO
+
     @pytest.mark.asyncio
     async def test_simple_echo(self):
         t = BashTool()

@@ -49,6 +49,14 @@ class AgentConfig(BaseModel):
     max_tool_result_chars: int = 80000
 
 
+class SecurityConfig(BaseModel):
+    mode: str = "normal"  # "normal" | "fast" | "yolo"
+    restrict_to_workspace: bool = True  # confine file/bash ops to project dir
+    auto_approve: list[str] = Field(default_factory=list)
+    write_patterns: list[str] = Field(default_factory=list)
+    blocked: list[str] = Field(default_factory=list)
+
+
 class ToolsConfig(BaseModel):
     disabled: list[str] = Field(default_factory=list)
     tavily_api_key: str = ""
@@ -61,6 +69,7 @@ class Config(BaseModel):
     fallback_providers: dict[str, str] = Field(default_factory=dict)
     mcp_servers: dict[str, MCPServerConfig] = Field(default_factory=dict)
     tools: ToolsConfig = Field(default_factory=ToolsConfig)
+    security: SecurityConfig = Field(default_factory=SecurityConfig)
     agent: AgentConfig = Field(default_factory=AgentConfig)
 
     def resolve_preset(self, name: str | None) -> ModelPresetConfig:

@@ -35,14 +35,15 @@ class Display:
             return str(first_val)[:80]
         return ""
 
-    def print_welcome(self, model: str, session_id: str):
-        console.print(Panel(
+    def print_welcome(self, model: str, session_id: str, summary: str = ""):
+        content = (
             f"[bold]BananaCoder[/] v0.1.0\n"
             f"Session: {session_id}  Model: {model}\n"
-            f"Type /help for commands, exit to quit",
-            title="Welcome",
-            border_style="green",
-        ))
+            f"Type /help for commands, exit to quit"
+        )
+        if summary:
+            content += f"\n[dim]{summary}[/dim]"
+        console.print(Panel(content, title="Welcome", border_style="yellow"))
 
     def print_goodbye(self):
         console.print(Text("\nGoodbye!", style="bold yellow"))

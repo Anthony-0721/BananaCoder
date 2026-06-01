@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import os
 import platform
+from pathlib import Path
 from typing import Any
 
 from banana.tools.base import Tool, tool_parameters
@@ -26,8 +27,25 @@ class BashTool(Tool):
     exclusive = True
 
     async def execute(self, command: str, timeout: int = 120, workdir: str | None = None) -> str:
+        from banana.security import get_security
+        from banana.tools.filesystem import _workspace_root
+        from banana.tools.path_utils import is_under, WORKSPACE_BOUNDARY_NOTE
+
+        # Security check
+        security = get_security()
+        allowed, reason = await security.check_and_confirm(command)
+        if not allowed:
+            return f"bash:\n[BLOCKED] {reason}"
+
         timeout = min(max(timeout, 1), 600)
         cwd = workdir or os.getcwd()
+
+        # Workspace boundary for working_dir
+        if _workspace_root:
+            requested = Path(cwd).expanduser().resolve()
+            workspace = _workspace_root.resolve()
+            if not is_under(requested, workspace) and requested != workspace:
+                return f"bash:\n[BLOCKED] working_dir '{cwd}' is outside workspace '{workspace}'." + WORKSPACE_BOUNDARY_NOTE
 
         if _WINDOWS:
             return await self._run_windows(command, timeout, cwd)

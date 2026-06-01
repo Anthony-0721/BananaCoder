@@ -326,7 +326,7 @@ async def connect_mcp_servers(mcp_servers: dict, registry: ToolRegistry) -> dict
                     continue
                 wrapper = MCPToolWrapper(session, name, tool_def, tool_timeout=tool_timeout)
                 registry.register(wrapper)
-                logger.debug(f"MCP: registered tool '{wrapper.name}' from '{name}'")
+                logger.info(f"MCP: registered tool '{wrapper.name}' from '{name}'")
 
             return name, server_stack
         except BaseException as e:
