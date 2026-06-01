@@ -131,9 +131,35 @@ class CommandRouter:
     # ---- Help ----
 
     def build_help_text(self) -> str:
-        """Generate help text from registered command specs."""
-        lines = ["[bold]Commands:[/bold]\n"]
-        for spec in self._specs:
-            arg = " " + spec.arg_hint if spec.arg_hint else ""
-            lines.append(f"  {spec.command}{arg}  — {spec.description}")
-        return "\n".join(lines)
+        """Generate help text from registered command specs, grouped by category."""
+        groups = [
+            ("Session", [
+                "/clear", "/session", "/history", "/export",
+            ]),
+            ("State & config", [
+                "/status", "/model", "/mode", "/config", "/tool", "/skill",
+            ]),
+            ("Memory", [
+                "/memory", "/remember", "/forget",
+            ]),
+            ("Other", [
+                "/stop", "/help", "/exit",
+            ]),
+        ]
+        # Build lookup from command name to spec
+        spec_map: dict[str, CommandSpec] = {}
+        for s in self._specs:
+            cmd = s.command.rstrip()
+            spec_map[cmd] = s
+
+        lines: list[str] = []
+        for group_name, cmds in groups:
+            visible = [(c, spec_map[c]) for c in cmds if c in spec_map]
+            if not visible:
+                continue
+            lines.append(f"[bold]{group_name}:[/bold]")
+            for cmd, spec in visible:
+                arg = " " + spec.arg_hint if spec.arg_hint else ""
+                lines.append(f"  {cmd}{arg} — {spec.description}")
+            lines.append("")
+        return "\n".join(lines).rstrip()

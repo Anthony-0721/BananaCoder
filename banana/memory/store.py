@@ -1,10 +1,8 @@
 """Persistent memory store (simplified from nanobot's MemoryStore)."""
 from __future__ import annotations
 
-import json
 import os
 import re
-import time
 from pathlib import Path
 
 MEMORY_SECTION_RE = re.compile(r"^### (.+)$", re.MULTILINE)

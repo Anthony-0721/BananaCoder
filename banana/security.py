@@ -6,8 +6,80 @@ import fnmatch
 from dataclasses import dataclass, field
 from enum import Enum
 
+import ipaddress
+import re
+import socket
+from urllib.parse import urlparse as _urlparse
+
 from rich.console import Console
 from rich.prompt import Confirm
+
+# ---- SSRF Protection (merged from security/network.py) ----
+
+_BLOCKED_NETWORKS = [
+    ipaddress.IPv4Network("0.0.0.0/8"),
+    ipaddress.IPv4Network("10.0.0.0/8"),
+    ipaddress.IPv4Network("100.64.0.0/10"),
+    ipaddress.IPv4Network("127.0.0.0/8"),
+    ipaddress.IPv4Network("169.254.0.0/16"),
+    ipaddress.IPv4Network("172.16.0.0/12"),
+    ipaddress.IPv4Network("192.168.0.0/16"),
+    ipaddress.IPv6Network("::1/128"),
+    ipaddress.IPv6Network("fc00::/7"),
+    ipaddress.IPv6Network("fe80::/10"),
+]
+_URL_RE = re.compile(r"https?://[^\s\"'`;|<>]+")
+
+
+def _is_private(addr) -> bool:
+    try:
+        ip = ipaddress.ip_address(addr)
+    except ValueError:
+        return False
+    for network in _BLOCKED_NETWORKS:
+        if ip in network:
+            return True
+    return False
+
+
+def validate_url_target(url: str) -> tuple[bool, str]:
+    try:
+        parsed = _urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            return False, f"Blocked URL scheme: {parsed.scheme}"
+        hostname = parsed.hostname
+        if not hostname:
+            return False, "Invalid URL: no hostname"
+        try:
+            ip = ipaddress.ip_address(hostname)
+            if _is_private(ip):
+                return False, f"Blocked private IP: {hostname}"
+            return True, ""
+        except ValueError:
+            pass
+        addrs = socket.getaddrinfo(hostname, None)
+        for addr_info in addrs:
+            ip_str = addr_info[4][0]
+            try:
+                ip = ipaddress.ip_address(ip_str)
+                if _is_private(ip):
+                    return False, f"URL resolves to private IP: {ip_str}"
+            except ValueError:
+                continue
+        return True, ""
+    except socket.gaierror:
+        return False, "DNS resolution failed"
+    except Exception as e:
+        return False, f"URL validation error: {e}"
+
+
+def contains_internal_url(command: str) -> bool:
+    for match in _URL_RE.finditer(command):
+        url = match.group(0)
+        safe, _ = validate_url_target(url)
+        if not safe:
+            return True
+    return False
 
 console = Console()
 
@@ -143,6 +215,10 @@ class SecurityContext:
         return self._matches(command, self.blocked)
 
     async def check_and_confirm(self, command: str) -> tuple[bool, str]:
+        # SSRF check first (always enforced)
+        if contains_internal_url(command):
+            return False, f"Blocked by SSRF protection: command contains URL targeting private/internal IP"
+
         # Blocked patterns always blocked in all modes
         if self._is_blocked(command):
             return False, f"Blocked by security policy: {command[:60]}"

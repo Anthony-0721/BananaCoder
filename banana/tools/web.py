@@ -81,6 +81,12 @@ class WebFetchTool(Tool):
         if len(url) > MAX_URL_LENGTH:
             return f"web_fetch:\n[FAILED] URL exceeds {MAX_URL_LENGTH} chars"
 
+        # SSRF protection
+        from banana.security import validate_url_target
+        safe, reason = validate_url_target(url)
+        if not safe:
+            return f"web_fetch:\n[BLOCKED] SSRF protection: {reason}"
+
         parsed = urlparse(url)
         if not parsed.scheme or not parsed.netloc:
             return f"web_fetch:\n[FAILED] Invalid URL: {url}"

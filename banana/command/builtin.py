@@ -37,8 +37,8 @@ def register_builtin_commands(router: CommandRouter, dependencies: dict[str, Any
                  title="Exit", description="Exit BananaCoder")
     router.exact("/quit", cmd_exit, hide_from_help=True)
 
-    # ---- /new (clear session) ----
-    async def cmd_new(args: str, ctx: dict) -> str | None:
+    # ---- /clear ----
+    async def cmd_clear(args: str, ctx: dict) -> str | None:
         if not session_mgr:
             return None
         session = await session_mgr.load()
@@ -48,9 +48,9 @@ def register_builtin_commands(router: CommandRouter, dependencies: dict[str, Any
         Console().print("[green]Session cleared. Starting fresh.[/green]")
         return None
 
-    router.exact("/new", cmd_new,
-                 title="New chat", description="Clear the session and start fresh")
-    router.exact("/clear", cmd_new, hide_from_help=True)
+    router.exact("/clear", cmd_clear,
+                 title="Clear session", description="Clear current session, start fresh (same session ID)")
+    router.exact("/new", cmd_clear, hide_from_help=True)
 
     # ---- /session ----
     async def cmd_session(args: str, ctx: dict) -> str | None:
