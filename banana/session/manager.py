@@ -18,6 +18,8 @@ class Session:
     project: str
     messages: list[dict[str, Any]] = field(default_factory=list)
     summary: str = ""
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
     created_at: float = 0.0
     updated_at: float = 0.0
 
@@ -71,7 +73,8 @@ class SessionManager:
             meta = json.loads(meta_path.read_text(encoding="utf-8"))
         else:
             meta = {"id": sid, "project": str(self._project_hash),
-                    "created_at": time.time(), "summary": ""}
+                    "created_at": time.time(), "summary": "",
+                    "prompt_tokens": 0, "completion_tokens": 0}
 
         if msg_path.exists():
             async with aiofiles.open(msg_path, "r", encoding="utf-8") as f:
@@ -82,6 +85,8 @@ class SessionManager:
         return Session(
             id=sid, project=meta.get("project", ""),
             messages=messages, summary=meta.get("summary", ""),
+            prompt_tokens=meta.get("prompt_tokens", 0),
+            completion_tokens=meta.get("completion_tokens", 0),
             created_at=meta.get("created_at", time.time()),
             updated_at=meta.get("updated_at", time.time()),
         )
@@ -104,6 +109,8 @@ class SessionManager:
             "id": session.id, "project": session.project,
             "created_at": session.created_at, "updated_at": session.updated_at,
             "summary": session.summary,
+            "prompt_tokens": session.prompt_tokens,
+            "completion_tokens": session.completion_tokens,
         }
         async with aiofiles.open(tmp_meta, "w", encoding="utf-8") as f:
             await f.write(json.dumps(meta, ensure_ascii=False, indent=2))

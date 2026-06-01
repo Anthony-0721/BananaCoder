@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from rich.console import Console
-from rich.text import Text
 from rich.panel import Panel
 
 console = Console()
@@ -18,7 +17,15 @@ class Display:
     async def on_tool(self, name: str, args: dict):
         self._tool_count += 1
         summary = self._tool_summary(name, args)
-        console.print(Text(f"\n  [{name}] {summary}", style="dim cyan"))
+        console.print(f"\n  [dim cyan][{name}][/] {summary}", end="")
+
+    async def on_tool_result(self, name: str, result: str):
+        if result.startswith("Error") or "FAILED" in result[:20] or "BLOCKED" in result[:20]:
+            console.print(" [bold red]FAILED[/]")
+        elif len(result) > 500:
+            console.print(f" [bold green]OK[/] [dim]({len(result)} chars)[/dim]")
+        else:
+            console.print(" [bold green]OK[/]")
 
     def _tool_summary(self, name: str, args: dict) -> str:
         key_map = {
@@ -46,4 +53,4 @@ class Display:
         console.print(Panel(content, title="Welcome", border_style="yellow"))
 
     def print_goodbye(self):
-        console.print(Text("\nGoodbye!", style="bold yellow"))
+        console.print("\n[bold yellow]Goodbye![/]")

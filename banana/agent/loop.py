@@ -31,6 +31,7 @@ class Agent:
         self, user_input: str,
         on_token: Callable[[str], Awaitable[None]] | None = None,
         on_tool: Callable[[str, dict], Awaitable[None]] | None = None,
+        on_tool_result: Callable[[str, str], Awaitable[None]] | None = None,
     ) -> str:
         session = await self.session_mgr.load()
         session.messages.append({"role": "user", "content": user_input})
@@ -56,10 +57,15 @@ class Agent:
             session.messages,
             on_token=on_token,
             on_tool=on_tool,
+            on_tool_result=on_tool_result,
         )
 
+        # Accumulate tokens
+        session.prompt_tokens += result.prompt_tokens
+        session.completion_tokens += result.completion_tokens
+
         await self.session_mgr.save(session)
-        return result
+        return result.text
 
     def _build_system_prompt(self) -> str:
         skills_summary = self.skills_loader.build_skills_summary()

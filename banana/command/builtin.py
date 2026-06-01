@@ -111,15 +111,18 @@ def register_builtin_commands(router: CommandRouter, dependencies: dict[str, Any
         table = Table(title="Status", show_header=False, title_style="bold")
         table.add_column("Key", style="dim")
         table.add_column("Value")
+        pt = session.prompt_tokens
+        ct = session.completion_tokens
+
         table.add_row("Session", f"{session.id} ({len(session.messages)} messages)")
         table.add_row("Working dir", str(Path.cwd()))
         table.add_row("Model", f"{default.model if default else 'N/A'} ({default.provider if default else 'N/A'})")
+        table.add_row("Tokens", f"in: {pt:,}  out: {ct:,}  total: {pt+ct:,}")
         table.add_row("Security mode", sec.mode.value)
         table.add_row("Tools", f"{tool_count} total ({builtin_count} built-in, {mcp_count} MCP)")
         table.add_row("Skills", str(skill_count))
         mcp_server_count = len(config.mcp_servers) if config else 0
         table.add_row("MCP servers", f"{mcp_server_count} configured")
-        table.add_row("Sub-agents", "0 active (runs inline)")
         c.print(table)
         return None
 
@@ -246,5 +249,111 @@ def register_builtin_commands(router: CommandRouter, dependencies: dict[str, Any
         Console().print("[yellow]Stop requested. Use Ctrl+C to interrupt current generation.[/yellow]")
         return None
 
-    router.priority("/stop", cmd_stop,
-                    title="Stop", description="Interrupt current generation", icon="!")
+    router.priority("/stop", cmd_stop, title="Stop", description="Interrupt current generation")
+
+    # ---- /export ----
+    async def cmd_export(args: str, ctx: dict) -> str | None:
+        if not session_mgr:
+            return None
+        from pathlib import Path
+        from datetime import datetime
+        from rich.console import Console
+        import aiofiles
+        c = Console()
+        session = await session_mgr.load()
+        if not session.messages:
+            c.print("[yellow]No messages to export.[/yellow]")
+            return None
+
+        # Determine file path
+        filename = args.strip() if args else f"banana-session-{datetime.now().strftime('%Y%m%d-%H%M%S')}.md"
+        path = Path(filename)
+        if not path.is_absolute():
+            path = Path.cwd() / path
+
+        model_name = config.model_presets.get("default").model if config and config.model_presets else "N/A"
+        lines = [
+            f"# BananaCoder Session Export",
+            f"",
+            f"**Session**: {session.id} | **Model**: {model_name}",
+            f"**Date**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            f"**Messages**: {len(session.messages)}",
+            f"**Tokens**: in={session.prompt_tokens:,} out={session.completion_tokens:,} total={session.prompt_tokens+session.completion_tokens:,}",
+            f"",
+            f"---",
+            f"",
+        ]
+
+        for m in session.messages:
+            role = m.get("role", "?")
+            content = str(m.get("content", ""))
+            tool_calls = m.get("tool_calls", [])
+
+            if role == "system":
+                lines.append(f"### System\n\n```\n{content[:500]}\n```\n")
+            elif role == "user":
+                lines.append(f"### You\n\n{content}\n")
+            elif role == "assistant":
+                if tool_calls:
+                    names = ", ".join(tc.get("function", {}).get("name", "?") for tc in tool_calls)
+                    lines.append(f"### Assistant\n\n*Used tools: {names}*\n")
+                    if content:
+                        lines.append(f"{content}\n")
+                else:
+                    lines.append(f"### Assistant\n\n{content}\n")
+            elif role == "tool":
+                call_id = m.get("tool_call_id", "?")
+                lines.append(f"*Tool result ({call_id[:8]}):*\n\n```\n{content[:500]}\n```\n")
+
+        markdown = "\n".join(lines)
+        try:
+            async with aiofiles.open(path, "w", encoding="utf-8") as f:
+                await f.write(markdown)
+            c.print(f"[green]Exported {len(session.messages)} messages to {path}[/green]")
+        except Exception as e:
+            c.print(f"[red]Export failed: {e}[/red]")
+        return None
+
+    router.exact("/export", cmd_export,
+                 title="Export", description="Export session to Markdown file", arg_hint="[filename]")
+    router.prefix("/export ", cmd_export)
+
+    # ---- /history ----
+    async def cmd_history(args: str, ctx: dict) -> str | None:
+        if not session_mgr:
+            return None
+        from rich.console import Console
+        c = Console()
+        n = 10
+        if args:
+            try:
+                n = min(max(int(args.split()[0]), 1), 50)
+            except ValueError:
+                pass
+        session = await session_mgr.load()
+        msgs = session.messages[-n:] if len(session.messages) > n else session.messages
+        c.print(f"\n[bold]Last {len(msgs)} messages:[/bold]\n")
+        for i, m in enumerate(msgs):
+            role = m.get("role", "?")
+            content = str(m.get("content", ""))[:120]
+            # Escape Rich markup characters in content
+            content = content.replace("[", "\\[").replace("]", "\\]")
+            tool_calls = m.get("tool_calls", [])
+            if role == "user":
+                c.print(f"  [{i+1}] [bold blue]You:[/] {content}")
+            elif role == "assistant":
+                if tool_calls:
+                    names = [tc.get("function", {}).get("name", "?") for tc in tool_calls]
+                    c.print(f"  [{i+1}] [bold green]Assistant:[/] [dim]used {', '.join(names)}[/dim]")
+                else:
+                    c.print(f"  [{i+1}] [bold green]Assistant:[/] {content[:200]}")
+            elif role == "tool":
+                c.print(f"  [{i+1}] [bold yellow]Tool ({m.get('tool_call_id', '?')[:8]}):[/] [dim]{content[:100]}[/dim]")
+            elif role == "system":
+                c.print(f"  [{i+1}] [dim]System[/dim]")
+        c.print()
+        return None
+
+    router.exact("/history", cmd_history,
+                 title="History", description="Show recent conversation messages", arg_hint="[n]")
+    router.prefix("/history ", cmd_history)

@@ -37,6 +37,19 @@ class AnthropicProvider(LLMProvider):
         model = model or self.default_model
         system, anthropic_msgs, tools_anthropic = self._convert_messages(messages, tools)
 
+        # Prompt caching: cache system + tools (stable across turns)
+        if isinstance(system, str) and system:
+            system = [
+                {"type": "text", "text": system},
+                {"type": "text", "text": "<cached>", "cache_control": {"type": "ephemeral"}},
+            ]
+        if tools_anthropic:
+            tools_anthropic[-1]["cache_control"] = {"type": "ephemeral"}
+
+        # Cache the last few messages too (they're stable within a turn)
+        if anthropic_msgs and len(anthropic_msgs) >= 2:
+            anthropic_msgs[-2].setdefault("cache_control", {"type": "ephemeral"})
+
         params: dict[str, Any] = {
             "model": model, "messages": anthropic_msgs,
             "max_tokens": max(1, max_tokens), "temperature": temperature,

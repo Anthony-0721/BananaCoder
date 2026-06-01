@@ -38,7 +38,7 @@ class TestAgentRunner:
         runner = AgentRunner(p, r)
         messages = [{"role": "user", "content": "hi"}]
         result = await runner.run(messages)
-        assert result == "Hello!"
+        assert result.text == "Hello!"
 
     @pytest.mark.asyncio
     async def test_tool_call_loop(self):
@@ -55,7 +55,7 @@ class TestAgentRunner:
         runner = AgentRunner(p, r)
         messages = [{"role": "user", "content": "echo hi"}]
         result = await runner.run(messages)
-        assert result == "Got your echo!"
+        assert result.text == "Got your echo!"
         assert any(m["role"] == "tool" and "echo: hi" in str(m["content"]) for m in messages)
 
     @pytest.mark.asyncio
@@ -70,7 +70,7 @@ class TestAgentRunner:
         runner = AgentRunner(p, r, max_rounds=3)
         messages = [{"role": "user", "content": "loop"}]
         result = await runner.run(messages)
-        assert "maximum" in result
+        assert "maximum" in result.text
 
     @pytest.mark.asyncio
     async def test_error_response(self):
@@ -79,4 +79,4 @@ class TestAgentRunner:
         runner = AgentRunner(p, r)
         messages = [{"role": "user", "content": "hi"}]
         result = await runner.run(messages)
-        assert "error" in result.lower()
+        assert "error" in result.text.lower()

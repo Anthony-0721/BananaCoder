@@ -2,11 +2,19 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
 from banana.providers.base import LLMProvider, LLMResponse
 from banana.agent.context import ContextManager
 from banana.tools.registry import ToolRegistry
+
+
+@dataclass
+class RunResult:
+    text: str
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
 
 
 class AgentRunner:
@@ -30,9 +38,12 @@ class AgentRunner:
         self, messages: list[dict[str, Any]],
         on_token: Callable[[str], Awaitable[None]] | None = None,
         on_tool: Callable[[str, dict[str, Any]], Awaitable[None]] | None = None,
-    ) -> str:
+        on_tool_result: Callable[[str, str], Awaitable[None]] | None = None,
+    ) -> RunResult:
         system_msg = self.system_prompt_override or "You are a helpful coding assistant."
         empty_count = 0
+        total_prompt = 0
+        total_completion = 0
 
         for _ in range(self.max_rounds):
             await self.context.compress(messages, self.provider)
@@ -43,18 +54,20 @@ class AgentRunner:
                 tools=self.tools.get_definitions() if len(self.tools) > 0 else None,
                 on_content_delta=on_token,
             )
+            total_prompt += response.usage.get("prompt_tokens", 0)
+            total_completion += response.usage.get("completion_tokens", 0)
 
             if response.finish_reason == "error":
                 msg = response.content or "Model error"
                 messages.append({"role": "assistant", "content": msg})
                 if on_token:
                     await on_token(msg)
-                return msg
+                return RunResult(msg, total_prompt, total_completion)
 
             if not response.content and not response.tool_calls:
                 empty_count += 1
                 if empty_count >= 3:
-                    return "(The model returned empty responses repeatedly. The conversation may be stuck.)"
+                    return RunResult("(The model returned empty responses repeatedly.)", total_prompt, total_completion)
                 messages.append({"role": "user", "content": "Please respond with text."})
                 continue
             empty_count = 0
@@ -62,17 +75,20 @@ class AgentRunner:
             messages.append(self._build_assistant_message(response))
 
             if not response.tool_calls:
-                return response.content or ""
+                return RunResult(response.content or "", total_prompt, total_completion)
 
             tool_results = await self._execute_tools(response.tool_calls, on_tool)
             for tc, result in zip(response.tool_calls, tool_results):
+                truncated = self._truncate_result(result)
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tc.id,
-                    "content": self._truncate_result(result),
+                    "content": truncated,
                 })
+                if on_tool_result:
+                    await on_tool_result(tc.name, truncated)
 
-        return "(reached maximum tool-call rounds)"
+        return RunResult("(reached maximum tool-call rounds)", total_prompt, total_completion)
 
     async def _execute_tools(self, tool_calls, on_tool=None) -> list[str]:
         parallel_calls = []

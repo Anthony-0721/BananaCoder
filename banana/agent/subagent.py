@@ -78,6 +78,6 @@ class SubagentManager:
                 runner.run(messages),
                 timeout=timeout,
             )
-            return result
+            return result.text
         except asyncio.TimeoutError:
             return f"Sub-agent timed out after {timeout}s"

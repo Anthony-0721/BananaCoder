@@ -192,12 +192,12 @@ async def _run_interactive(config: Config, args):
                     line,
                     on_token=display.on_token,
                     on_tool=display.on_tool,
+                    on_tool_result=display.on_tool_result,
                 )
                 console.print()
             except KeyboardInterrupt:
                 console.print("\n[yellow]Interrupted[/yellow]")
     finally:
-        await session_mgr.save(session)
         for stack in mcp_stacks.values():
             await stack.aclose()
 
