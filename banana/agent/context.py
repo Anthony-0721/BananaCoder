@@ -3,6 +3,14 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from banana.prompts.context import (
+    SUMMARY_SYSTEM_PROMPT,
+    CONTEXT_COMPRESSED_PREFIX,
+    HARD_RESET_PREFIX,
+    CONTEXT_ACK,
+    HARD_RESET_ACK,
+)
+
 if TYPE_CHECKING:
     from banana.providers.base import LLMProvider
 
@@ -77,8 +85,8 @@ class ContextManager:
         recent = messages[-keep_recent:]  # Store BEFORE clearing
         summary = await self._get_summary(old, provider)
         messages.clear()
-        messages.append({"role": "user", "content": f"[Context compressed]\n{summary}"})
-        messages.append({"role": "assistant", "content": "Got it, I have the prior context."})
+        messages.append({"role": "user", "content": f"{CONTEXT_COMPRESSED_PREFIX}\n{summary}"})
+        messages.append({"role": "assistant", "content": CONTEXT_ACK})
         messages.extend(recent)  # Use stored recent
         return True
 
@@ -86,8 +94,8 @@ class ContextManager:
         tail = messages[-4:] if len(messages) > 4 else messages[-2:]
         summary = await self._get_summary(messages[:-len(tail)], provider)
         messages.clear()
-        messages.append({"role": "user", "content": f"[Hard reset]\n{summary}"})
-        messages.append({"role": "assistant", "content": "Context restored. Continuing."})
+        messages.append({"role": "user", "content": f"{HARD_RESET_PREFIX}\n{summary}"})
+        messages.append({"role": "assistant", "content": HARD_RESET_ACK})
         messages.extend(tail)
 
     async def _get_summary(self, messages: list[dict], provider) -> str:
@@ -99,10 +107,7 @@ class ContextManager:
             try:
                 resp = await provider.chat(
                     messages=[
-                        {"role": "system", "content": (
-                            "Compress this conversation into a brief summary. "
-                            "Preserve: file paths edited, key decisions, errors encountered."
-                        )},
+                        {"role": "system", "content": SUMMARY_SYSTEM_PROMPT},
                         {"role": "user", "content": flat[:12000]},
                     ],
                 )

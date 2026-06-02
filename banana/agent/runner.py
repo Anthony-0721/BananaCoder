@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
 from banana.providers.base import LLMProvider, LLMResponse
+from banana.prompts.system import FALLBACK_SYSTEM_PROMPT
 from banana.agent.context import ContextManager
 from banana.hook import HookContext
 from banana.tools.registry import ToolRegistry
@@ -43,7 +44,7 @@ class AgentRunner:
         on_tool: Callable[[str, dict[str, Any]], Awaitable[None]] | None = None,
         on_tool_result: Callable[[str, str], Awaitable[None]] | None = None,
     ) -> RunResult:
-        system_msg = self.system_prompt_override or "You are a helpful coding assistant."
+        system_msg = self.system_prompt_override or FALLBACK_SYSTEM_PROMPT
         empty_count = 0
         total_prompt = 0
         total_completion = 0

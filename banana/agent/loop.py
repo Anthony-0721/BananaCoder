@@ -77,19 +77,10 @@ class Agent:
         always_content = self.skills_loader.load_skills_for_context(always_skills) if always_skills else ""
         memory_context = self.memory_store.get_context() if self.memory_store else ""
 
-        prompt = "You are BananaCoder, a personal AI coding assistant. You help with software engineering tasks.\n\n"
-        prompt += "## Working Directory\n"
-        prompt += f"Current: {Path.cwd()}\n\n"
-
-        if memory_context:
-            prompt += memory_context + "\n\n"
-
-        if skills_summary:
-            prompt += "## Available Skills\n\n"
-            prompt += skills_summary + "\n\n"
-
-        if always_content:
-            prompt += "## Always-Loaded Skills\n\n"
-            prompt += always_content + "\n\n"
-
-        return prompt
+        from banana.prompts.system import build_system_prompt
+        return build_system_prompt(
+            cwd=str(Path.cwd()),
+            skills_summary=skills_summary,
+            always_content=always_content,
+            memory_context=memory_context,
+        )

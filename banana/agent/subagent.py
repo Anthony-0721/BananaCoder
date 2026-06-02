@@ -2,42 +2,13 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
+
+from banana.prompts.subagent import AGENT_DEFINITIONS
 
 if TYPE_CHECKING:
     from banana.providers.base import LLMProvider
     from banana.tools.registry import ToolRegistry
-
-
-@dataclass
-class AgentDefinition:
-    description: str
-    tools: list[str] | None = None
-    read_only: bool = False
-    system_prompt: str = ""
-
-
-AGENT_DEFINITIONS = {
-    "Explore": AgentDefinition(
-        description="Read-only codebase exploration",
-        tools=["read_file", "glob", "grep", "web_search", "web_fetch", "load_skill"],
-        read_only=True,
-        system_prompt="You are a code exploration assistant. Explore the codebase and report findings.",
-    ),
-    "Plan": AgentDefinition(
-        description="Design implementation plans",
-        tools=["read_file", "glob", "grep"],
-        read_only=True,
-        system_prompt="You are a software architecture assistant. Design plans and analyze trade-offs.",
-    ),
-    "general-purpose": AgentDefinition(
-        description="Full-capability sub-agent",
-        tools=None,
-        read_only=False,
-        system_prompt="You are a general-purpose coding assistant. Complete the given task autonomously.",
-    ),
-}
 
 
 class SubagentManager:
@@ -45,7 +16,7 @@ class SubagentManager:
         self.provider = provider
         self.tools = tools
 
-    def _filter_tools(self, definition: AgentDefinition) -> "ToolRegistry":
+    def _filter_tools(self, definition) -> "ToolRegistry":
         if definition.tools is None:
             return self.tools
         from banana.tools.registry import ToolRegistry
