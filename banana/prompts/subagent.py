@@ -17,6 +17,11 @@ _SUBAGENT_PREFIX = (
     "You are a subagent spawned by the main BananaCoder agent to complete a "
     "specific task. Stay focused on the assigned task — do not expand scope. "
     "Your final response will be reported back to the main agent.\n\n"
+    "Follow these behavioral guidelines:\n"
+    "- Think before coding: state assumptions, surface tradeoffs, ask if uncertain.\n"
+    "- Simplicity first: minimum code that solves the problem, nothing speculative.\n"
+    "- Surgical changes: touch only what you must, match existing style.\n"
+    "- Goal-driven: define success criteria, verify before finishing.\n\n"
 )
 
 EXPLORE_PROMPT = _SUBAGENT_PREFIX + (
