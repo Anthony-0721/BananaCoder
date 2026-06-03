@@ -1,6 +1,8 @@
 """Rich display helpers for streaming output."""
 from __future__ import annotations
 
+import asyncio
+
 from rich.console import Console
 from rich.panel import Panel
 
@@ -12,14 +14,38 @@ class Display:
         self._tool_count = 0
         self._needs_sep = False
         self._thinking = False
+        self._thinking_done: asyncio.Event | None = None
+        self._line_cleared: asyncio.Event | None = None
 
     async def on_llm_start(self):
         self._thinking = True
-        console.print("  [dim]Thinking...[/dim]")
+        self._thinking_done = asyncio.Event()
+        self._line_cleared = asyncio.Event()
+        asyncio.create_task(self._animate_thinking())
+
+    async def _animate_thinking(self):
+        frames = [
+            "\r  [dim]Thinking.[/dim]  ",
+            "\r  [dim]Thinking..[/dim] ",
+            "\r  [dim]Thinking...[/dim]",
+        ]
+        i = 0
+        while not self._thinking_done.is_set():
+            console.print(frames[i % 3], end="")
+            i += 1
+            try:
+                await asyncio.wait_for(self._thinking_done.wait(), timeout=0.4)
+            except asyncio.TimeoutError:
+                continue
+        # Clear animation line
+        console.print("\r" + " " * 30 + "\r", end="")
+        self._line_cleared.set()
 
     async def on_token(self, token: str):
         if self._thinking:
             self._thinking = False
+            self._thinking_done.set()
+            await self._line_cleared.wait()
         console.print(token, end="", highlight=False)
         self._needs_sep = True
 
