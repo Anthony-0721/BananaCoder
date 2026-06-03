@@ -16,8 +16,22 @@ from banana.tools.base import Tool, tool_parameters
 })
 class AgentTool(Tool):
     name = "agent"
-    description = "Launch a sub-agent to perform a task autonomously."
-    exclusive = True
+    description = (
+        "Launch a sub-agent to handle a task independently. "
+        "Use this for:\n"
+        "- Researching codebase structure or searching across many files\n"
+        "- Implementing a multi-step change in isolation (fresh context)\n"
+        "- Designing implementation plans with structured analysis\n"
+        "- Any task that would benefit from a separate context window\n\n"
+        "You can launch multiple agents in a single response — "
+        "they will execute in parallel.\n"
+        "Available types: Explore (read-only search), Plan (architecture design), "
+        "general-purpose (full tool access)"
+    )
+
+    @property
+    def concurrency_safe(self) -> bool:
+        return True
 
     def __init__(self, subagent_manager=None):
         super().__init__()
@@ -30,6 +44,10 @@ class AgentTool(Tool):
                       description: str = "", timeout_seconds: int = 300) -> str:
         if not self._manager:
             return "agent:\n[FAILED] Subagent system not initialized."
-        return await self._manager.run_subagent(
+        result = await self._manager.run_subagent(
             prompt=prompt, agent_type=subagent_type, timeout=timeout_seconds,
         )
+        # Trim long results to avoid blowing up the main agent's context
+        if len(result) > 5000:
+            result = result[:4500] + f"\n... (sub-agent output truncated, {len(result)} chars total)"
+        return f"agent:\n[Sub-agent completed]\n{result}"

@@ -18,6 +18,7 @@ _SUBAGENT_PREFIX = (
     "specific task. Stay focused on the assigned task — do not expand scope. "
     "Your final response will be reported back to the main agent.\n\n"
     "Follow these behavioral guidelines:\n"
+    "- Verify before asserting: use tools to check file state, don't rely on memory.\n"
     "- Think before coding: state assumptions, surface tradeoffs, ask if uncertain.\n"
     "- Simplicity first: minimum code that solves the problem, nothing speculative.\n"
     "- Surgical changes: touch only what you must, match existing style.\n"

@@ -140,3 +140,50 @@ class TestAgentTool:
         t = AgentTool()
         assert t.name == "agent"
         assert t._manager is None
+
+    @pytest.mark.asyncio
+    async def test_concurrency_safe(self):
+        t = AgentTool()
+        assert t.concurrency_safe is True
+
+    @pytest.mark.asyncio
+    async def test_parallel_execution(self):
+        """Multiple agent calls should run in parallel, not serial."""
+        import asyncio
+        from banana.agent.subagent import SubagentManager
+
+        class MockProvider:
+            async def chat_stream_with_retry(self, **kw):
+                await asyncio.sleep(0.2)
+                from banana.providers.base import LLMResponse
+                return LLMResponse(content="mock result")
+
+        class MockTools:
+            def get(self, name):
+                return None
+            def __len__(self):
+                return 0
+            def get_definitions(self):
+                return None
+            def has_tools(self):
+                return False
+            @property
+            def tool_names(self):
+                return []
+
+        mgr = SubagentManager(MockProvider(), MockTools())
+        t = AgentTool(mgr)
+
+        start = asyncio.get_event_loop().time()
+        results = await asyncio.gather(
+            t.execute(prompt="task 1", subagent_type="general-purpose"),
+            t.execute(prompt="task 2", subagent_type="general-purpose"),
+            t.execute(prompt="task 3", subagent_type="general-purpose"),
+        )
+        elapsed = asyncio.get_event_loop().time() - start
+
+        # If serial, would take ~0.6s (3 × 0.2s). Parallel should be ~0.2s.
+        assert elapsed < 0.5, f"Parallel execution took {elapsed:.2f}s, expected <0.5s"
+        assert len(results) == 3
+        for r in results:
+            assert "Sub-agent completed" in r
