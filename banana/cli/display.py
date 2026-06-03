@@ -10,6 +10,7 @@ console = Console()
 class Display:
     def __init__(self):
         self._tool_count = 0
+        self._pending: list[str] = []
 
     async def on_token(self, token: str):
         console.print(token, end="", highlight=False)
@@ -17,18 +18,25 @@ class Display:
     async def on_tool(self, name: str, args: dict):
         self._tool_count += 1
         summary = self._tool_summary(name, args)
-        # \[ escapes [ so Rich renders [agent] literally, not as markup
-        console.print(f"\n  [dim cyan]\\[{name}][/] {summary}", end="")
+        # Buffer tool line; on_tool_result will flush it with status
+        self._pending.append(f"  [dim cyan]\\[{name}][/] {summary}")
 
     async def on_tool_result(self, name: str, result: str):
-        if result.startswith("Error") or "FAILED" in result[:20] or "BLOCKED" in result[:20]:
-            console.print(" [bold red]FAILED[/]")
-        elif "Background agent launched" in result:
-            console.print(" [bold green]OK →[/] [yellow]background[/]")
-        elif len(result) > 500:
-            console.print(f" [bold green]OK[/] [dim]({len(result)} chars)[/dim]")
+        status = self._format_status(result)
+        if self._pending:
+            line = self._pending.pop(0)
+            console.print(f"{line}  {status}")
         else:
-            console.print(" [bold green]OK[/]")
+            console.print(f"  {status}")
+
+    def _format_status(self, result: str) -> str:
+        if result.startswith("Error") or "FAILED" in result[:20] or "BLOCKED" in result[:20]:
+            return "[bold red]FAILED[/]"
+        if "Background agent launched" in result:
+            return "[bold green]OK →[/] [yellow]background[/]"
+        if len(result) > 500:
+            return f"[bold green]OK[/] [dim]({len(result)} chars)[/dim]"
+        return "[bold green]OK[/]"
 
     def _tool_summary(self, name: str, args: dict) -> str:
         key_map = {
