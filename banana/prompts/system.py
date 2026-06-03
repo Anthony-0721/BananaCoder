@@ -18,6 +18,10 @@ SYSTEM_PROMPT = (
     "- The current project structure\n\n"
     "YOU MUST first verify with glob, grep, or read_file. "
     "If you cannot confirm it with a tool, do not assert it.\n\n"
+    "## Task Planning\n"
+    "For multi-step tasks (spanning multiple tool calls), first output a "
+    "brief numbered plan with verification checkpoints, then execute each "
+    "step. Do not start executing before stating the plan.\n\n"
 )
 
 FALLBACK_SYSTEM_PROMPT = "You are a helpful coding assistant."

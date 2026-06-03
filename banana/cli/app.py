@@ -66,6 +66,18 @@ async def _run_single(config: Config, args, mcp_stacks):
     registry = build_tools(config, skills_loader)
     provider = make_provider(config)
 
+    from banana.tools.runtime_state import RuntimeState
+    from banana.tools.self_tool import SelfTool
+    runtime_state = RuntimeState()
+    default_preset = config.model_presets.get("default")
+    if default_preset:
+        runtime_state.model = default_preset.model
+        runtime_state.provider = default_preset.provider
+    runtime_state.max_rounds = config.agent.max_tool_rounds
+    runtime_state.working_dir = str(Path.cwd())
+    registry.register(SelfTool(runtime_state))
+    runtime_state.tool_count = len(registry)
+
     data_dir = Path.home() / ".bananacoder"
     session_mgr = SessionManager(data_dir, Path.cwd())
     if args.session:
@@ -82,7 +94,8 @@ async def _run_single(config: Config, args, mcp_stacks):
         agent = Agent(provider, registry, session_mgr, skills_loader,
                       max_rounds=config.agent.max_tool_rounds,
                       max_tool_chars=config.agent.max_tool_result_chars,
-                      context_window_tokens=config.model_presets.get("default", ModelPresetConfig(model="", provider="")).context_window_tokens)
+                      context_window_tokens=config.model_presets.get("default", ModelPresetConfig(model="", provider="")).context_window_tokens,
+                      runtime_state=runtime_state)
         result = await agent.chat(
             args.prompt,
             on_token=display.on_token,
@@ -100,6 +113,18 @@ async def _run_interactive(config: Config, args):
     skills_loader = SkillsLoader(Path.cwd())
     registry = build_tools(config, skills_loader)
     provider = make_provider(config)
+
+    # Runtime state for self-inspection tool
+    from banana.tools.runtime_state import RuntimeState
+    from banana.tools.self_tool import SelfTool
+    runtime_state = RuntimeState()
+    runtime_state.model = default_preset.model if (default_preset := config.model_presets.get("default")) else "unknown"
+    runtime_state.provider = default_preset.provider if default_preset else "unknown"
+    runtime_state.max_rounds = config.agent.max_tool_rounds
+    runtime_state.security_mode = config.security.mode
+    runtime_state.working_dir = str(Path.cwd())
+    registry.register(SelfTool(runtime_state))
+    runtime_state.tool_count = len(registry)
 
     # Load security config
     from banana.security import SecurityContext, SecurityMode, get_security
@@ -135,7 +160,8 @@ async def _run_interactive(config: Config, args):
                   memory_store=memory_store,
                   max_rounds=config.agent.max_tool_rounds,
                   max_tool_chars=config.agent.max_tool_result_chars,
-                  context_window_tokens=config.model_presets.get("default", ModelPresetConfig(model="", provider="")).context_window_tokens)
+                  context_window_tokens=config.model_presets.get("default", ModelPresetConfig(model="", provider="")).context_window_tokens,
+                  runtime_state=runtime_state)
 
     # Set up command router (inspired by nanobot's CommandRouter)
     from banana.command.router import CommandRouter

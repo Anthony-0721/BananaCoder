@@ -33,4 +33,13 @@ dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
     "pytest-mock>=3.14",
+    "coverage>=7.0",
 ]
+
+[tool.coverage.run]
+source = ["banana"]
+omit = ["*/__init__.py", "*/__main__.py"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true

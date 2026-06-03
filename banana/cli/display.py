@@ -100,7 +100,9 @@ class Display:
 
         if name == "edit":
             import re
-            m = re.search(r"replaced (\d+) lines with (\d+) lines", result)
+            if "[WARN]" in result:
+                return "[bold yellow]WARN[/]"
+            m = re.search(r"-(\d+)\+(\d+)", result)
             if m:
                 return f"[bold green]OK[/] [dim](-{m.group(1)}+{m.group(2)} lines)[/dim]"
             return "[bold red]FAILED[/]"

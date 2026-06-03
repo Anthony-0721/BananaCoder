@@ -19,6 +19,7 @@ class Agent:
         memory_store=None, hook_manager=None,
         max_rounds: int = 50, max_tool_chars: int = 80000,
         context_window_tokens: int = 128_000,
+        runtime_state=None,
     ):
         self.provider = provider
         self.tools = tools
@@ -29,6 +30,7 @@ class Agent:
         self.max_rounds = max_rounds
         self.max_tool_chars = max_tool_chars
         self.context_window_tokens = context_window_tokens
+        self._runtime_state = runtime_state
         self._subagent_mgr = SubagentManager(provider, tools)
         agent_tool = tools.get("agent")
         if agent_tool:
@@ -45,6 +47,11 @@ class Agent:
     ) -> str:
         session = await self.session_mgr.load()
         session.messages.append({"role": "user", "content": user_input})
+
+        # Update runtime state for self-inspection
+        if self._runtime_state:
+            self._runtime_state.session_messages = len(session.messages)
+            self._runtime_state.iteration += 1
 
         system_prompt = self._build_system_prompt()
 

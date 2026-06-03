@@ -11,7 +11,9 @@ A personal AI coding assistant built from scratch with Python asyncio — pure C
 
 **Tools**
 - Bash execution with 3-mode security sandbox (normal / fast / yolo)
-- File operations: read, write, edit
+- File operations: read, write, edit (with diff preview)
+- File state tracking — warns before editing unread files
+- Self-inspection tool for runtime state queries
 - Code search: glob and regex grep
 - Web: Tavily search + fetch (with SSRF protection)
 - Subagent dispatch: Explore, Plan, general-purpose agents
@@ -22,7 +24,16 @@ A personal AI coding assistant built from scratch with Python asyncio — pure C
 **Context Management**
 - 3-layer compression: snip (50%) → summarize (70%) → collapse (90%)
 - Auto-triggered per LLM round based on token threshold
+- Context window percentage tracking in token stats
+- Configurable `context_window_tokens` from config.json
 - Session persistence with atomic writes
+
+**Agent**
+- Configurable max tool rounds (default 50)
+- Per-turn token stats with timing
+- Task planning guidance in system prompt
+- Edit diff preview via unified diff format
+- Runtime state introspection for self-awareness
 
 **Security**
 - 3 tiers: `normal` (safe=auto, write=confirm, unknown=block) / `fast` (safe+write=auto) / `yolo` (all auto)
@@ -151,7 +162,15 @@ banana/
 
 ```bash
 pip install -e ".[dev]"
-pytest tests/ -q
+
+# Run tests with coverage report
+python run_tests.py
+
+# Run tests only (no coverage)
+python run_tests.py --quick
+
+# Generate HTML coverage report
+python run_tests.py --html
 ```
 
 ## Credits

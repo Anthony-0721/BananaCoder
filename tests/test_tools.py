@@ -63,6 +63,8 @@ class TestEdit:
     async def test_edit_single_match(self, temp_dir):
         f = temp_dir / "code.py"
         f.write_text("x = 1\n")
+        from banana.tools.file_state import get_file_state
+        get_file_state().mark_read(f)
         t = EditTool()
         result = await t.execute(file_path=str(f), old_string="x = 1", new_string="x = 2")
         assert "[OK]" in result
@@ -72,14 +74,26 @@ class TestEdit:
     async def test_edit_multiple_matches(self, temp_dir):
         f = temp_dir / "code.py"
         f.write_text("x = 1\nx = 1\n")
+        from banana.tools.file_state import get_file_state
+        get_file_state().mark_read(f)
         t = EditTool()
         result = await t.execute(file_path=str(f), old_string="x = 1", new_string="x = 2")
         assert "appears 2 times" in result
 
     @pytest.mark.asyncio
+    async def test_edit_unread_warns(self, temp_dir):
+        f = temp_dir / "code.py"
+        f.write_text("x = 1\n")
+        t = EditTool()
+        result = await t.execute(file_path=str(f), old_string="x = 1", new_string="x = 2")
+        assert "WARN" in result or "not read" in result
+
+    @pytest.mark.asyncio
     async def test_edit_not_found(self, temp_dir):
         f = temp_dir / "code.py"
         f.write_text("hello\n")
+        from banana.tools.file_state import get_file_state
+        get_file_state().mark_read(f)
         t = EditTool()
         result = await t.execute(file_path=str(f), old_string="not there", new_string="x")
         assert "not found" in result.lower() or "FAILED" in result

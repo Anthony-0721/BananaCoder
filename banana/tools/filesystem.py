@@ -1,12 +1,14 @@
 """Filesystem tools: read, write, edit."""
 from __future__ import annotations
 
+import difflib
 from pathlib import Path
 from typing import Any
 
 import aiofiles
 
 from banana.tools.base import Tool, tool_parameters
+from banana.tools.file_state import get_file_state
 from banana.tools.path_utils import resolve_workspace_path
 
 
@@ -58,6 +60,7 @@ class ReadFileTool(Tool):
         numbered = [f"{i+1:4d}| {line}" for i, line in enumerate(lines[:2000])]
         if len(lines) > 2000:
             numbered.append(f"... ({len(lines) - 2000} more lines)")
+        get_file_state().mark_read(path)
         return f"read:\n[OK] ({len(lines)} lines)\n\n" + "\n".join(numbered)
 
 
@@ -114,6 +117,11 @@ class EditTool(Tool):
         if not path.is_file():
             return f"edit:\n[FAILED] Not a file: {file_path}"
 
+        # Warn if file wasn't read first
+        warn = get_file_state().check_edit(path)
+        if warn:
+            return warn
+
         try:
             async with aiofiles.open(path, "r", encoding="utf-8") as f:
                 content = await f.read()
@@ -135,4 +143,11 @@ class EditTool(Tool):
 
         old_lines = len(old_string.split("\n"))
         new_lines = len(new_string.split("\n"))
-        return f"edit:\n[OK] Edited {path.name}: replaced {old_lines} lines with {new_lines} lines"
+        diff = difflib.unified_diff(
+            content.splitlines(keepends=True),
+            new_content.splitlines(keepends=True),
+            fromfile=path.name, tofile=path.name,
+            n=3,
+        )
+        diff_text = "".join(diff).strip()
+        return f"edit:\n[OK] Edited {path.name}: -{old_lines}+{new_lines}\n{diff_text}"
