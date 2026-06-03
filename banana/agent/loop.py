@@ -29,6 +29,11 @@ class Agent:
         self.max_rounds = max_rounds
         self.max_tool_chars = max_tool_chars
         self.context_window_tokens = context_window_tokens
+        # Persistent subagent manager (survives across chat calls)
+        self._subagent_mgr = SubagentManager(provider, tools)
+        agent_tool = tools.get("agent")
+        if agent_tool:
+            agent_tool.set_manager(self._subagent_mgr)
 
     async def chat(
         self, user_input: str,
@@ -41,15 +46,9 @@ class Agent:
 
         system_prompt = self._build_system_prompt()
 
-        subagent_mgr = SubagentManager(self.provider, self.tools)
-
-        agent_tool = self.tools.get("agent")
-        if agent_tool:
-            agent_tool.set_manager(subagent_mgr)
-
         runner = AgentRunner(
             provider=self.provider, tools=self.tools,
-            subagent_manager=subagent_mgr,
+            subagent_manager=self._subagent_mgr,
             system_prompt_override=system_prompt,
             hook_manager=self.hook_manager,
             max_rounds=self.max_rounds,
