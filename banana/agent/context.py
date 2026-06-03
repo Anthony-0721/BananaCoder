@@ -38,23 +38,28 @@ class ContextManager:
         self._summarize_at = int(max_tokens * 0.70)
         self._collapse_at = int(max_tokens * 0.90)
 
-    async def compress(self, messages: list[dict], provider: "LLMProvider | None" = None) -> bool:
+    @staticmethod
+    def estimate_tokens(messages: list[dict]) -> int:
+        return estimate_tokens(messages)
+
+    async def compress(self, messages: list[dict], provider: "LLMProvider | None" = None) -> str:
+        """Compress if over thresholds. Returns '' or 'snip'/'summarize'/'collapse'."""
         current = estimate_tokens(messages)
-        compressed = False
+        compressed = ""
 
         if current > self._snip_at:
             if self._snip_tool_outputs(messages):
-                compressed = True
+                compressed = "snip"
                 current = estimate_tokens(messages)
 
         if current > self._summarize_at and len(messages) > 10:
             if await self._summarize(messages, provider, keep_recent=8):
-                compressed = True
+                compressed = "summarize"
                 current = estimate_tokens(messages)
 
         if current > self._collapse_at and len(messages) > 4:
             await self._hard_collapse(messages, provider)
-            compressed = True
+            compressed = "collapse"
 
         return compressed
 

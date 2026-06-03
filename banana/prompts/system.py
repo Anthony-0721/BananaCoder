@@ -93,6 +93,7 @@ def _build_project_tree(root: Path, max_depth: int = 3) -> str:
 _EXCLUDE_DIRS = frozenset({
     "__pycache__", ".git", ".pytest_cache", ".mypy_cache",
     ".ruff_cache", "node_modules", ".venv", "venv", ".git",
+    ".banana",  # Skills already listed in Available Skills section
 })
 
 

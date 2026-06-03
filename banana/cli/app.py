@@ -11,7 +11,7 @@ from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.styles import Style
 
 from banana.config.loader import load_config, resolve_env_vars
-from banana.config.schema import Config
+from banana.config.schema import Config, ModelPresetConfig
 from banana.providers.factory import make_provider
 from banana.tools.registry import ToolRegistry
 from banana.tools.bash import BashTool
@@ -81,7 +81,8 @@ async def _run_single(config: Config, args, mcp_stacks):
     try:
         agent = Agent(provider, registry, session_mgr, skills_loader,
                       max_rounds=config.agent.max_tool_rounds,
-                      max_tool_chars=config.agent.max_tool_result_chars)
+                      max_tool_chars=config.agent.max_tool_result_chars,
+                      context_window_tokens=config.model_presets.get("default", ModelPresetConfig(model="", provider="")).context_window_tokens)
         result = await agent.chat(
             args.prompt,
             on_token=display.on_token,
@@ -133,7 +134,8 @@ async def _run_interactive(config: Config, args):
     agent = Agent(provider, registry, session_mgr, skills_loader,
                   memory_store=memory_store,
                   max_rounds=config.agent.max_tool_rounds,
-                  max_tool_chars=config.agent.max_tool_result_chars)
+                  max_tool_chars=config.agent.max_tool_result_chars,
+                  context_window_tokens=config.model_presets.get("default", ModelPresetConfig(model="", provider="")).context_window_tokens)
 
     # Set up command router (inspired by nanobot's CommandRouter)
     from banana.command.router import CommandRouter
@@ -206,6 +208,8 @@ async def _run_interactive(config: Config, args):
                     on_tool=display.on_tool,
                     on_tool_result=display.on_tool_result,
                     on_llm_start=display.on_llm_start,
+                    on_turn_complete=display.on_turn_complete,
+                    on_reasoning=display.on_reasoning,
                 )
                 console.print()
             except KeyboardInterrupt:

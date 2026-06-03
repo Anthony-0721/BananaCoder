@@ -86,6 +86,7 @@ class OpenAICompatProvider(LLMProvider):
         reasoning_effort: str | None = None,
         tool_choice: str | dict[str, Any] | None = None,
         on_content_delta: Callable[[str], Awaitable[None]] | None = None,
+        on_reasoning: Callable[[str], Awaitable[None]] | None = None,
     ) -> LLMResponse:
         model = model or self.default_model
         messages = self._sanitize_empty_content(messages)
@@ -129,6 +130,9 @@ class OpenAICompatProvider(LLMProvider):
             if choice.finish_reason:
                 actual_finish = choice.finish_reason
             delta = choice.delta
+            reasoning = getattr(delta, "reasoning_content", None)
+            if reasoning and on_reasoning:
+                await on_reasoning(reasoning)
             if delta.content:
                 content_parts.append(delta.content)
                 if on_content_delta:

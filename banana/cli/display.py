@@ -43,6 +43,19 @@ class Display:
         status = self._format_status(name, result)
         console.print(f"  {status}")
 
+    async def on_turn_complete(self, prompt_tokens: int, completion_tokens: int,
+                                elapsed: float, info: str = "", window: int = 0, **kwargs):
+        if info and not prompt_tokens:
+            console.print(f"  [dim]{info}[/dim]")
+        elif prompt_tokens:
+            total = prompt_tokens + completion_tokens
+            pct = f" ({total * 100 // window}% of {window // 1000}K)" if window else ""
+            console.print(f"\n  [dim]Prompt: {prompt_tokens:,} | Completion: {completion_tokens:,} | "
+                         f"Total: {total:,}{pct} | {elapsed:.1f}s[/dim]")
+
+    async def on_reasoning(self, text: str):
+        pass  # Suppressed — "Thinking..." spinner already shows model is working
+
     def _format_status(self, name: str, result: str) -> str:
         first = result[:50]
         if first.startswith("Error") or "FAILED" in first or "BLOCKED" in first:
@@ -111,7 +124,6 @@ class Display:
             preview = lines[-1][:50] if len(lines) > 1 else ""
             return f"[bold green]OK[/] [dim]{preview}[/dim]"
 
-        # Default: char count
         if len(result) > 500:
             return f"[bold green]OK[/] [dim]({len(result)} chars)[/dim]"
         return "[bold green]OK[/]"

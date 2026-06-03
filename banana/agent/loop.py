@@ -40,6 +40,8 @@ class Agent:
         on_tool: Callable[[str, dict], Awaitable[None]] | None = None,
         on_tool_result: Callable[[str, str], Awaitable[None]] | None = None,
         on_llm_start: Callable[[], Awaitable[None]] | None = None,
+        on_turn_complete: Callable[..., Awaitable[None]] | None = None,
+        on_reasoning: Callable[[str], Awaitable[None]] | None = None,
     ) -> str:
         session = await self.session_mgr.load()
         session.messages.append({"role": "user", "content": user_input})
@@ -62,6 +64,8 @@ class Agent:
             on_tool=on_tool,
             on_tool_result=on_tool_result,
             on_llm_start=on_llm_start,
+            on_turn_complete=on_turn_complete,
+            on_reasoning=on_reasoning,
         )
 
         # Accumulate tokens

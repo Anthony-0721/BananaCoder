@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
@@ -17,6 +18,8 @@ class RunResult:
     text: str
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    duration: float = 0.0
+    iterations: int = 0
 
 
 class AgentRunner:
@@ -44,17 +47,28 @@ class AgentRunner:
         on_tool: Callable[[str, dict[str, Any]], Awaitable[None]] | None = None,
         on_tool_result: Callable[[str, str], Awaitable[None]] | None = None,
         on_llm_start: Callable[[], Awaitable[None]] | None = None,
+        on_turn_complete: Callable[..., Awaitable[None]] | None = None,
+        on_reasoning: Callable[[str], Awaitable[None]] | None = None,
     ) -> RunResult:
         system_msg = self.system_prompt_override or FALLBACK_SYSTEM_PROMPT
         empty_count = 0
         total_prompt = 0
         total_completion = 0
+        iterations = 0
 
         for _ in range(self.max_rounds):
-            await self.context.compress(messages, self.provider)
+            iterations += 1
+            turn_start = time.monotonic()
+
+            # Compression with notification
+            before_tok = self.context.estimate_tokens(messages)
+            compressed_type = await self.context.compress(messages, self.provider)
+            if compressed_type and on_turn_complete:
+                after_tok = self.context.estimate_tokens(messages)
+                await on_turn_complete(0, 0, 0.0, info=f"Context: {before_tok}→{after_tok} ({compressed_type})")
+
             full = [{"role": "system", "content": system_msg}] + messages
 
-            # Before LLM hook
             if self.hook_manager:
                 hctx = HookContext(messages=full, iteration=_)
                 await self.hook_manager.before_llm_call(hctx)
@@ -66,7 +80,9 @@ class AgentRunner:
                 messages=full,
                 tools=self.tools.get_definitions() if len(self.tools) > 0 else None,
                 on_content_delta=on_token,
+                on_reasoning=on_reasoning,
             )
+            turn_elapsed = time.monotonic() - turn_start
             total_prompt += response.usage.get("prompt_tokens", 0)
             total_completion += response.usage.get("completion_tokens", 0)
 
@@ -75,10 +91,11 @@ class AgentRunner:
                 messages.append({"role": "assistant", "content": msg})
                 if on_token:
                     await on_token(msg)
-                return RunResult(msg, total_prompt, total_completion)
+                if on_turn_complete:
+                    await on_turn_complete(total_prompt, total_completion, turn_elapsed, window=self.context.max_tokens)
+                return RunResult(msg, total_prompt, total_completion, turn_elapsed, iterations)
 
             if response.finish_reason == "length" and response.content:
-                # Truncated — save partial content and ask model to continue
                 messages.append({"role": "assistant", "content": response.content})
                 messages.append({"role": "user", "content": "Continue from where you left off. Response was truncated."})
                 continue
@@ -86,7 +103,9 @@ class AgentRunner:
             if not response.content and not response.tool_calls:
                 empty_count += 1
                 if empty_count >= 3:
-                    return RunResult("(The model returned empty responses repeatedly.)", total_prompt, total_completion)
+                    if on_turn_complete:
+                        await on_turn_complete(total_prompt, total_completion, turn_elapsed, window=self.context.max_tokens)
+                    return RunResult("(empty)", total_prompt, total_completion, turn_elapsed, iterations)
                 messages.append({"role": "user", "content": "Please respond with text."})
                 continue
             empty_count = 0
@@ -94,9 +113,12 @@ class AgentRunner:
             messages.append(self._build_assistant_message(response))
 
             if not response.tool_calls:
-                return RunResult(response.content or "", total_prompt, total_completion)
+                if on_turn_complete:
+                    await on_turn_complete(total_prompt, total_completion, turn_elapsed, window=self.context.max_tokens)
+                return RunResult(response.content or "", total_prompt, total_completion, turn_elapsed, iterations)
 
             tool_results = await self._execute_tools(response.tool_calls, on_tool)
+            turn_elapsed = time.monotonic() - turn_start
             for tc, result in zip(response.tool_calls, tool_results):
                 truncated = self._truncate_result(result)
                 messages.append({
@@ -107,10 +129,14 @@ class AgentRunner:
                 if on_tool_result:
                     await on_tool_result(tc.name, truncated)
 
-        return RunResult("(reached maximum tool-call rounds)", total_prompt, total_completion)
+            if on_turn_complete:
+                await on_turn_complete(total_prompt, total_completion, turn_elapsed, window=self.context.max_tokens)
+
+        if on_turn_complete:
+            await on_turn_complete(total_prompt, total_completion, turn_elapsed, window=self.context.max_tokens)
+        return RunResult("(max rounds)", total_prompt, total_completion, time.monotonic() - turn_start, iterations)
 
     async def _execute_tools(self, tool_calls, on_tool=None) -> list[str]:
-        # Before-tool hooks — collect blocked IDs
         blocked: set[str] = set()
         if self.hook_manager:
             for tc in tool_calls:
@@ -131,7 +157,6 @@ class AgentRunner:
 
         results: list[tuple[int, str]] = []
 
-        # Blocked tools get a placeholder result immediately
         for tc in tool_calls:
             if tc.id in blocked:
                 results.append((tool_calls.index(tc), "Error: Blocked by hook policy"))

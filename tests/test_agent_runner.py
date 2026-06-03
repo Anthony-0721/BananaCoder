@@ -70,7 +70,7 @@ class TestAgentRunner:
         runner = AgentRunner(p, r, max_rounds=3)
         messages = [{"role": "user", "content": "loop"}]
         result = await runner.run(messages)
-        assert "maximum" in result.text
+        assert "max rounds" in result.text
 
     @pytest.mark.asyncio
     async def test_error_response(self):

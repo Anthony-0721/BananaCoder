@@ -90,6 +90,7 @@ class LLMProvider(ABC):
         reasoning_effort: str | None = None,
         tool_choice: str | dict[str, Any] | None = None,
         on_content_delta: Callable[[str], Awaitable[None]] | None = None,
+        on_reasoning: Callable[[str], Awaitable[None]] | None = None,
     ) -> LLMResponse:
         response = await self.chat(messages=messages, tools=tools, model=model,
                                    max_tokens=max_tokens, temperature=temperature,
@@ -156,6 +157,7 @@ class LLMProvider(ABC):
         temperature: float | None = None, reasoning_effort: str | None = None,
         tool_choice: str | dict[str, Any] | None = None,
         on_content_delta: Callable[[str], Awaitable[None]] | None = None,
+        on_reasoning: Callable[[str], Awaitable[None]] | None = None,
     ) -> LLMResponse:
         max_tokens = max_tokens or self.generation.max_tokens
         temperature = temperature or self.generation.temperature
@@ -163,7 +165,8 @@ class LLMProvider(ABC):
         kw = dict(messages=messages, tools=tools, model=model,
                   max_tokens=max_tokens, temperature=temperature,
                   reasoning_effort=reasoning_effort, tool_choice=tool_choice,
-                  on_content_delta=on_content_delta)
+                  on_content_delta=on_content_delta,
+                  on_reasoning=on_reasoning)
         return await self._run_with_retry(self._safe_chat_stream, kw, messages)
 
     async def _run_with_retry(
