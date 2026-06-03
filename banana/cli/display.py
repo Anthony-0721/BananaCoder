@@ -17,11 +17,16 @@ class Display:
     async def on_tool(self, name: str, args: dict):
         self._tool_count += 1
         summary = self._tool_summary(name, args)
-        console.print(f"\n  [dim cyan][{name}][/] {summary}", end="")
+        # Escape brackets so Rich doesn't eat [agent] as markup
+        safe_name = name.replace("[", "\\[").replace("]", "\\]")
+        safe_summary = summary.replace("[", "\\[").replace("]", "\\]") if summary else ""
+        console.print(f"\n  [dim cyan][{safe_name}][/] {safe_summary}", end="")
 
     async def on_tool_result(self, name: str, result: str):
         if result.startswith("Error") or "FAILED" in result[:20] or "BLOCKED" in result[:20]:
             console.print(" [bold red]FAILED[/]")
+        elif "Background agent launched" in result:
+            console.print(" [bold yellow]→ background[/]")
         elif len(result) > 500:
             console.print(f" [bold green]OK[/] [dim]({len(result)} chars)[/dim]")
         else:
@@ -32,7 +37,7 @@ class Display:
             "bash": "command", "read_file": "file_path", "write_file": "file_path",
             "edit": "file_path", "grep": "pattern", "glob": "pattern",
             "web_search": "query", "web_fetch": "url",
-            "agent": "subagent_type", "load_skill": "skill_name",
+            "agent": "description", "load_skill": "skill_name",
         }
         key = key_map.get(name, "")
         if key and key in args:
