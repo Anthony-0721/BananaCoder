@@ -35,8 +35,6 @@ class Display:
     def _format_status(self, result: str) -> str:
         if result.startswith("Error") or "FAILED" in result[:20] or "BLOCKED" in result[:20]:
             return "[bold red]FAILED[/]"
-        if "Background agent launched" in result:
-            return "[bold green]OK →[/] [yellow]background[/]"
         if len(result) > 500:
             return f"[bold green]OK[/] [dim]({len(result)} chars)[/dim]"
         return "[bold green]OK[/]"
@@ -55,11 +53,6 @@ class Display:
             first_val = list(args.values())[0] if args else ""
             return str(first_val)[:80]
         return ""
-
-    async def on_background_complete(self, task_id: str, summary: str):
-        summary_short = summary.replace("\n", " ")[:80].strip()
-        label = f"\\[background {task_id[:6]}]"
-        console.print(f"\n  [dim]{label}[/dim] {summary_short}")
 
     def print_welcome(self, model: str, session_id: str, summary: str = ""):
         content = (

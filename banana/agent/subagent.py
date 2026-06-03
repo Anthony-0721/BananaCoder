@@ -2,8 +2,7 @@
 from __future__ import annotations
 
 import asyncio
-import uuid
-from typing import TYPE_CHECKING, Awaitable, Callable
+from typing import TYPE_CHECKING
 
 from banana.prompts.subagent import AGENT_DEFINITIONS
 
@@ -13,20 +12,11 @@ if TYPE_CHECKING:
 
 
 class SubagentManager:
-    """Manages subagent execution.
+    """Manages subagent execution (synchronous only)."""
 
-    Supports both synchronous (run_subagent) and background (spawn) modes.
-    Background agents run as asyncio.Tasks; results are collected via
-    collect_completed() and injected into the main agent's message loop.
-    """
-
-    def __init__(self, provider: "LLMProvider", tools: "ToolRegistry",
-                 on_complete: "Callable[[str, str], Awaitable[None]] | None" = None):
+    def __init__(self, provider: "LLMProvider", tools: "ToolRegistry"):
         self.provider = provider
         self.tools = tools
-        self._on_complete = on_complete
-        self._background_tasks: dict[str, asyncio.Task] = {}
-        self._completed: dict[str, str] = {}
 
     def _filter_tools(self, definition) -> "ToolRegistry":
         if definition.tools is None:
@@ -65,54 +55,3 @@ class SubagentManager:
             return result.text
         except asyncio.TimeoutError:
             return f"Sub-agent timed out after {timeout}s"
-
-    # ---- Background subagent API ----
-
-    async def spawn(self, prompt: str, agent_type: str = "Explore",
-                    timeout: int = 300) -> str:
-        """Launch a background subagent.
-
-        Returns immediately with a task ID. The result is stored internally
-        and can be retrieved via collect_completed(). The main agent's loop
-        will inject completed results automatically on each iteration.
-        """
-        task_id = uuid.uuid4().hex[:8]
-
-        task = asyncio.create_task(
-            self._run_background(task_id, prompt, agent_type, timeout),
-        )
-        self._background_tasks[task_id] = task
-        task.add_done_callback(lambda _: self._background_tasks.pop(task_id, None))
-
-        return task_id
-
-    async def _run_background(self, task_id: str, prompt: str,
-                              agent_type: str, timeout: int):
-        """Execute a subagent in background and store the result."""
-        try:
-            result = await self.run_subagent(prompt, agent_type, timeout)
-            if len(result) > 5000:
-                result = result[:4500] + f"\n... (truncated, {len(result)} chars total)"
-            self._completed[task_id] = result
-            if self._on_complete:
-                await self._on_complete(task_id, result[:120])
-        except Exception as e:
-            self._completed[task_id] = f"[Background agent error] {e}"
-            if self._on_complete:
-                await self._on_complete(task_id, f"Error: {e}")
-
-    def collect_completed(self) -> list[tuple[str, str]]:
-        """Return all completed background agent results and clear them.
-
-        Returns list of (task_id, result) tuples for the main loop to inject.
-        """
-        results = list(self._completed.items())
-        self._completed.clear()
-        return results
-
-    def cancel_all_background(self):
-        """Cancel all running background tasks."""
-        for task in self._background_tasks.values():
-            task.cancel()
-        self._background_tasks.clear()
-        self._completed.clear()
