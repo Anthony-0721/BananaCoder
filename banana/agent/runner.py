@@ -50,6 +50,15 @@ class AgentRunner:
         total_completion = 0
 
         for _ in range(self.max_rounds):
+            # Inject completed background agent results
+            if self.subagent_manager:
+                completed = self.subagent_manager.collect_completed()
+                for task_id, result in completed:
+                    messages.append({
+                        "role": "user",
+                        "content": f"[Background agent {task_id} completed]\n{result}",
+                    })
+
             await self.context.compress(messages, self.provider)
             full = [{"role": "system", "content": system_msg}] + messages
 
