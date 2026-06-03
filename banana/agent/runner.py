@@ -43,6 +43,7 @@ class AgentRunner:
         on_token: Callable[[str], Awaitable[None]] | None = None,
         on_tool: Callable[[str, dict[str, Any]], Awaitable[None]] | None = None,
         on_tool_result: Callable[[str, str], Awaitable[None]] | None = None,
+        on_llm_start: Callable[[], Awaitable[None]] | None = None,
     ) -> RunResult:
         system_msg = self.system_prompt_override or FALLBACK_SYSTEM_PROMPT
         empty_count = 0
@@ -57,6 +58,9 @@ class AgentRunner:
             if self.hook_manager:
                 hctx = HookContext(messages=full, iteration=_)
                 await self.hook_manager.before_llm_call(hctx)
+
+            if on_llm_start:
+                await on_llm_start()
 
             response = await self.provider.chat_stream_with_retry(
                 messages=full,

@@ -10,27 +10,29 @@ console = Console()
 class Display:
     def __init__(self):
         self._tool_count = 0
-        self._pending: list[str] = []
         self._needs_sep = False
+        self._thinking = False
+
+    async def on_llm_start(self):
+        self._thinking = True
+        console.print("  [dim]Thinking...[/dim]")
 
     async def on_token(self, token: str):
+        if self._thinking:
+            self._thinking = False
         console.print(token, end="", highlight=False)
         self._needs_sep = True
 
     async def on_tool(self, name: str, args: dict):
         self._tool_count += 1
         summary = self._tool_summary(name, args)
-        self._pending.append(f"  [dim cyan]\\[{name}][/] {summary}")
+        sep = "\n" if self._needs_sep else ""
+        self._needs_sep = False
+        console.print(f"{sep}  [dim cyan]\\[{name}][/] {summary}")
 
     async def on_tool_result(self, name: str, result: str):
         status = self._format_status(result)
-        if self._pending:
-            line = self._pending.pop(0)
-            sep = "\n" if self._needs_sep else ""
-            self._needs_sep = False
-            console.print(f"{sep}{line}  {status}")
-        else:
-            console.print(f"  {status}")
+        console.print(f"  {status}")
 
     def _format_status(self, result: str) -> str:
         if result.startswith("Error") or "FAILED" in result[:20] or "BLOCKED" in result[:20]:

@@ -205,6 +205,7 @@ async def _run_interactive(config: Config, args):
                     on_token=display.on_token,
                     on_tool=display.on_tool,
                     on_tool_result=display.on_tool_result,
+                    on_llm_start=display.on_llm_start,
                 )
                 console.print()
             except KeyboardInterrupt:
