@@ -89,9 +89,14 @@ class MemoryStore:
         lines = text.splitlines()
         removed = 0
         result = []
+        current_section = "_header"
         for line in lines:
+            m = MEMORY_SECTION_RE.match(line.strip())
+            if m:
+                current_section = m.group(1).strip()
             stripped = line.strip()
-            if stripped.startswith("- ") and query.lower() in stripped.lower():
+            in_target = section is None or current_section == section
+            if in_target and stripped.startswith("- ") and query.lower() in stripped.lower():
                 removed += 1
                 continue
             result.append(line)

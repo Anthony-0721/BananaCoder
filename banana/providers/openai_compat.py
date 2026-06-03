@@ -117,6 +117,7 @@ class OpenAICompatProvider(LLMProvider):
         content_parts: list[str] = []
         tc_map: dict[int, dict[str, str]] = {}
         prompt_tok, completion_tok = 0, 0
+        actual_finish: str | None = None
 
         async for chunk in stream:
             if chunk.usage:
@@ -124,7 +125,10 @@ class OpenAICompatProvider(LLMProvider):
                 completion_tok = chunk.usage.completion_tokens or 0
             if not chunk.choices:
                 continue
-            delta = chunk.choices[0].delta
+            choice = chunk.choices[0]
+            if choice.finish_reason:
+                actual_finish = choice.finish_reason
+            delta = choice.delta
             if delta.content:
                 content_parts.append(delta.content)
                 if on_content_delta:
@@ -151,7 +155,7 @@ class OpenAICompatProvider(LLMProvider):
                 args = {}
             tool_calls.append(ToolCallRequest(id=raw["id"], name=raw["name"], arguments=args))
 
-        fin = "tool_calls" if tool_calls else "stop"
+        fin = actual_finish or ("tool_calls" if tool_calls else "stop")
         return LLMResponse(
             content="".join(content_parts) or None,
             tool_calls=tool_calls,

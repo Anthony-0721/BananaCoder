@@ -77,6 +77,12 @@ class AgentRunner:
                     await on_token(msg)
                 return RunResult(msg, total_prompt, total_completion)
 
+            if response.finish_reason == "length" and response.content:
+                # Truncated — save partial content and ask model to continue
+                messages.append({"role": "assistant", "content": response.content})
+                messages.append({"role": "user", "content": "Continue from where you left off. Response was truncated."})
+                continue
+
             if not response.content and not response.tool_calls:
                 empty_count += 1
                 if empty_count >= 3:
@@ -104,20 +110,19 @@ class AgentRunner:
         return RunResult("(reached maximum tool-call rounds)", total_prompt, total_completion)
 
     async def _execute_tools(self, tool_calls, on_tool=None) -> list[str]:
-        # Before-tool hooks
+        # Before-tool hooks — collect blocked IDs
+        blocked: set[str] = set()
         if self.hook_manager:
             for tc in tool_calls:
                 hctx = HookContext(tool_name=tc.name, tool_args=tc.arguments)
                 if not await self.hook_manager.before_tool_execute(hctx):
-                    # Hook blocked this tool call
-                    for i, t in enumerate(tool_calls):
-                        if t.id == tc.id:
-                            # We'll replace with blocked message later
-                            pass
+                    blocked.add(tc.id)
 
         parallel_calls = []
         serial_calls = []
         for tc in tool_calls:
+            if tc.id in blocked:
+                continue
             tool = self.tools.get(tc.name)
             if tool and tool.concurrency_safe:
                 parallel_calls.append(tc)
@@ -125,6 +130,11 @@ class AgentRunner:
                 serial_calls.append(tc)
 
         results: list[tuple[int, str]] = []
+
+        # Blocked tools get a placeholder result immediately
+        for tc in tool_calls:
+            if tc.id in blocked:
+                results.append((tool_calls.index(tc), "Error: Blocked by hook policy"))
 
         if parallel_calls:
             if on_tool:

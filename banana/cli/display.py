@@ -1,8 +1,6 @@
 """Rich display helpers for streaming output."""
 from __future__ import annotations
 
-import asyncio
-
 from rich.console import Console
 from rich.panel import Panel
 
@@ -14,42 +12,27 @@ class Display:
         self._tool_count = 0
         self._needs_sep = False
         self._thinking = False
-        self._thinking_done: asyncio.Event | None = None
-        self._line_cleared: asyncio.Event | None = None
+        self._spinner = None
 
     async def on_llm_start(self):
         self._thinking = True
-        self._thinking_done = asyncio.Event()
-        self._line_cleared = asyncio.Event()
-        asyncio.create_task(self._animate_thinking())
+        self._spinner = console.status("  Thinking...", spinner="dots")
+        self._spinner.start()
 
-    async def _animate_thinking(self):
-        frames = [
-            "\r  [dim]Thinking.[/dim]  ",
-            "\r  [dim]Thinking..[/dim] ",
-            "\r  [dim]Thinking...[/dim]",
-        ]
-        i = 0
-        while not self._thinking_done.is_set():
-            console.print(frames[i % 3], end="")
-            i += 1
-            try:
-                await asyncio.wait_for(self._thinking_done.wait(), timeout=0.4)
-            except asyncio.TimeoutError:
-                continue
-        # Clear animation line
-        console.print("\r" + " " * 30 + "\r", end="")
-        self._line_cleared.set()
-
-    async def on_token(self, token: str):
+    async def _stop_thinking(self):
         if self._thinking:
             self._thinking = False
-            self._thinking_done.set()
-            await self._line_cleared.wait()
-        console.print(token, end="", highlight=False)
+            if self._spinner:
+                self._spinner.stop()
+                self._spinner = None
+
+    async def on_token(self, token: str):
+        await self._stop_thinking()
+        console.print(token, end="", highlight=False, markup=False)
         self._needs_sep = True
 
     async def on_tool(self, name: str, args: dict):
+        await self._stop_thinking()
         self._tool_count += 1
         summary = self._tool_summary(name, args)
         sep = "\n" if self._needs_sep else ""
@@ -57,12 +40,78 @@ class Display:
         console.print(f"{sep}  [dim cyan]\\[{name}][/] {summary}")
 
     async def on_tool_result(self, name: str, result: str):
-        status = self._format_status(result)
+        status = self._format_status(name, result)
         console.print(f"  {status}")
 
-    def _format_status(self, result: str) -> str:
-        if result.startswith("Error") or "FAILED" in result[:20] or "BLOCKED" in result[:20]:
+    def _format_status(self, name: str, result: str) -> str:
+        first = result[:50]
+        if first.startswith("Error") or "FAILED" in first or "BLOCKED" in first:
             return "[bold red]FAILED[/]"
+
+        if name == "grep":
+            import re
+            m = re.search(r"\((\d+) matches in (\d+) files\)", result)
+            if m:
+                return f"[bold green]OK[/] [dim]({m.group(1)} matches in {m.group(2)} files)[/dim]"
+            return "[bold red]FAILED[/]" if "No matches" in result else "[bold green]OK[/]"
+
+        if name == "glob":
+            import re
+            m = re.search(r"\((\d+) matches\)", result)
+            if m:
+                return f"[bold green]OK[/] [dim]({m.group(1)} files)[/dim]"
+            return "[bold red]FAILED[/]"
+
+        if name == "bash":
+            if "Exit code: 0" in result[:100]:
+                lines = result.strip().split("\n")
+                out_lines = sum(1 for l in lines if l.strip() and not l.startswith("bash:") and not l.startswith("[OK]"))
+                return f"[bold green]OK[/] [dim](exit 0, {out_lines} lines)[/dim]"
+            m = __import__("re").search(r"Exit code: (\d+)", result)
+            ec = m.group(1) if m else "?"
+            return f"[bold red]FAILED[/] [dim](exit {ec})[/dim]"
+
+        if name == "read_file":
+            import re
+            m = re.search(r"\((\d+) lines\)", result)
+            if m:
+                return f"[bold green]OK[/] [dim]({m.group(1)} lines)[/dim]"
+            return "[bold red]FAILED[/]"
+
+        if name == "write_file":
+            import re
+            m = re.search(r"\((\d+) chars\)", result)
+            if m:
+                return f"[bold green]OK[/] [dim]({m.group(1)} chars)[/dim]"
+            return "[bold red]FAILED[/]"
+
+        if name == "edit":
+            import re
+            m = re.search(r"replaced (\d+) lines with (\d+) lines", result)
+            if m:
+                return f"[bold green]OK[/] [dim](-{m.group(1)}+{m.group(2)} lines)[/dim]"
+            return "[bold red]FAILED[/]"
+
+        if name == "web_search":
+            import re
+            m = re.search(r"\((\d+) results\)", result)
+            if m:
+                return f"[bold green]OK[/] [dim]({m.group(1)} results)[/dim]"
+            return "[bold red]FAILED[/]"
+
+        if name == "web_fetch":
+            import re
+            m = re.search(r"\((\d+), (\d+) chars\)", result)
+            if m:
+                return f"[bold green]OK[/] [dim](HTTP {m.group(1)}, {m.group(2)} chars)[/dim]"
+            return "[bold red]FAILED[/]"
+
+        if name == "agent":
+            lines = result.strip().split("\n")
+            preview = lines[-1][:50] if len(lines) > 1 else ""
+            return f"[bold green]OK[/] [dim]{preview}[/dim]"
+
+        # Default: char count
         if len(result) > 500:
             return f"[bold green]OK[/] [dim]({len(result)} chars)[/dim]"
         return "[bold green]OK[/]"
