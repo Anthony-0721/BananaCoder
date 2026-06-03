@@ -11,21 +11,24 @@ class Display:
     def __init__(self):
         self._tool_count = 0
         self._pending: list[str] = []
+        self._needs_sep = False
 
     async def on_token(self, token: str):
         console.print(token, end="", highlight=False)
+        self._needs_sep = True
 
     async def on_tool(self, name: str, args: dict):
         self._tool_count += 1
         summary = self._tool_summary(name, args)
-        # Buffer tool line; on_tool_result will flush it with status
         self._pending.append(f"  [dim cyan]\\[{name}][/] {summary}")
 
     async def on_tool_result(self, name: str, result: str):
         status = self._format_status(result)
         if self._pending:
             line = self._pending.pop(0)
-            console.print(f"{line}  {status}")
+            sep = "\n" if self._needs_sep else ""
+            self._needs_sep = False
+            console.print(f"{sep}{line}  {status}")
         else:
             console.print(f"  {status}")
 
@@ -52,6 +55,11 @@ class Display:
             first_val = list(args.values())[0] if args else ""
             return str(first_val)[:80]
         return ""
+
+    async def on_background_complete(self, task_id: str, summary: str):
+        summary_short = summary.replace("\n", " ")[:80].strip()
+        label = f"\\[background {task_id[:6]}]"
+        console.print(f"\n  [dim]{label}[/dim] {summary_short}")
 
     def print_welcome(self, model: str, session_id: str, summary: str = ""):
         content = (

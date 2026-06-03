@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Awaitable, Callable
 
 from banana.prompts.subagent import AGENT_DEFINITIONS
 
@@ -20,9 +20,11 @@ class SubagentManager:
     collect_completed() and injected into the main agent's message loop.
     """
 
-    def __init__(self, provider: "LLMProvider", tools: "ToolRegistry"):
+    def __init__(self, provider: "LLMProvider", tools: "ToolRegistry",
+                 on_complete: "Callable[[str, str], Awaitable[None]] | None" = None):
         self.provider = provider
         self.tools = tools
+        self._on_complete = on_complete
         self._background_tasks: dict[str, asyncio.Task] = {}
         self._completed: dict[str, str] = {}
 
@@ -92,8 +94,12 @@ class SubagentManager:
             if len(result) > 5000:
                 result = result[:4500] + f"\n... (truncated, {len(result)} chars total)"
             self._completed[task_id] = result
+            if self._on_complete:
+                await self._on_complete(task_id, result[:120])
         except Exception as e:
             self._completed[task_id] = f"[Background agent error] {e}"
+            if self._on_complete:
+                await self._on_complete(task_id, f"Error: {e}")
 
     def collect_completed(self) -> list[tuple[str, str]]:
         """Return all completed background agent results and clear them.

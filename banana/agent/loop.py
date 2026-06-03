@@ -19,6 +19,7 @@ class Agent:
         memory_store=None, hook_manager=None,
         max_rounds: int = 50, max_tool_chars: int = 80000,
         context_window_tokens: int = 128_000,
+        on_background_complete: "Callable[[str, str], Awaitable[None]] | None" = None,
     ):
         self.provider = provider
         self.tools = tools
@@ -30,7 +31,8 @@ class Agent:
         self.max_tool_chars = max_tool_chars
         self.context_window_tokens = context_window_tokens
         # Persistent subagent manager (survives across chat calls)
-        self._subagent_mgr = SubagentManager(provider, tools)
+        self._subagent_mgr = SubagentManager(provider, tools,
+                                             on_complete=on_background_complete)
         agent_tool = tools.get("agent")
         if agent_tool:
             agent_tool.set_manager(self._subagent_mgr)

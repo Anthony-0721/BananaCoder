@@ -133,7 +133,8 @@ async def _run_interactive(config: Config, args):
     agent = Agent(provider, registry, session_mgr, skills_loader,
                   memory_store=memory_store,
                   max_rounds=config.agent.max_tool_rounds,
-                  max_tool_chars=config.agent.max_tool_result_chars)
+                  max_tool_chars=config.agent.max_tool_result_chars,
+                  on_background_complete=display.on_background_complete)
 
     # Set up command router (inspired by nanobot's CommandRouter)
     from banana.command.router import CommandRouter
