@@ -17,16 +17,14 @@ class Display:
     async def on_tool(self, name: str, args: dict):
         self._tool_count += 1
         summary = self._tool_summary(name, args)
-        # Escape brackets so Rich doesn't eat [agent] as markup
-        safe_name = name.replace("[", "\\[").replace("]", "\\]")
-        safe_summary = summary.replace("[", "\\[").replace("]", "\\]") if summary else ""
-        console.print(f"\n  [dim cyan][{safe_name}][/] {safe_summary}", end="")
+        # \[ escapes [ so Rich renders [agent] literally, not as markup
+        console.print(f"\n  [dim cyan]\\[{name}][/] {summary}", end="")
 
     async def on_tool_result(self, name: str, result: str):
         if result.startswith("Error") or "FAILED" in result[:20] or "BLOCKED" in result[:20]:
             console.print(" [bold red]FAILED[/]")
         elif "Background agent launched" in result:
-            console.print(" [bold yellow]→ background[/]")
+            console.print(" [bold green]OK →[/] [yellow]background[/]")
         elif len(result) > 500:
             console.print(f" [bold green]OK[/] [dim]({len(result)} chars)[/dim]")
         else:
